@@ -132,9 +132,10 @@
   </header>
 
   <div id="warn" class="warn">
-    ℹ️ If goose did not open: goose Desktop may not be installed, or this
-    browser blocked the protocol handler. Open the fallback below and paste
-    the link into your browser's address bar.
+    ℹ️ If goose did not open: this browser may have blocked the auto-launch
+    — click a Launch button above. goose Desktop may also not be installed;
+    then use the fallback below and paste the link into your browser's
+    address bar.
   </div>
 
   <main class="cards">
@@ -182,8 +183,27 @@ goose://recipe?config=__DL_SETUP__
   </footer>
 
 <script>
-  // Minimal UX polish: if the OS has no goose:// handler, the page stays
-  // visible after a click and we surface the manual fallback hint.
+  // Auto-fire: opening this page with #pr-review / #ci-setup (as the README
+  // badges do) immediately launches the matching deep link, so one README
+  // click is enough. If the browser blocks the auto-launch (some require a
+  // user gesture on the page itself), the Launch buttons + warn hint cover it.
+  (function () {
+    var id = window.location.hash.slice(1);
+    if (id !== "pr-review" && id !== "ci-setup") return;
+    var card = document.getElementById(id);
+    var link = card && card.querySelector("a.launch-btn");
+    if (!link) return;
+    window.setTimeout(function () {
+      try { window.location.replace(link.href); } catch (err) { /* manual path */ }
+    }, 250);
+    window.setTimeout(function () {
+      var w = document.getElementById("warn");
+      if (w && !document.hidden) w.style.display = "block";
+    }, 3000);
+  })();
+
+  // If the OS has no goose:// handler, the page stays visible after a manual
+  // click and we surface the manual fallback hint.
   document.querySelectorAll(".launch-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var t0 = Date.now();

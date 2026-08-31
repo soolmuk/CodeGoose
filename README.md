@@ -120,18 +120,19 @@ Official reference: [goose CI/CD tutorial](https://goose-docs.ai/docs/tutorials/
 
 ### 1) Launch from goose Desktop
 
-> **Why a launch page?** GitHub strips non-allowlisted URL schemes like
-> `goose://` from rendered Markdown, so a raw deep-link badge would be a
-> dead link on github.com. The launch page below is served verbatim by
-> GitHub Pages, where `goose://` buttons work.
+> **One click → goose Desktop.** The badge opens a small GitHub Pages page
+> that immediately fires the official `goose://` deep link. (GitHub.com
+> strips custom URL schemes from rendered Markdown, so a raw `goose://`
+> link inside this README would be a dead link there.) If the auto-launch
+> is blocked, use the Launch button on that page or the fallback below.
 
-Open the **[CodeGoose Launch Page](https://soolmuk.github.io/CodeGoose/launch.html)** and click a launcher:
+Click a badge — goose Desktop starts automatically:
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-**[🧐 PR Code Review →](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)**
+[![Launch PR Code Review In Desktop](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)
 
 Grade a locally downloaded PR diff.
 
@@ -140,7 +141,7 @@ Grade a locally downloaded PR diff.
 </td>
 <td width="50%" valign="top">
 
-**[⚙️ CI Setup →](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)**
+[![Launch CI Setup In Desktop](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)
 
 Install or refresh the CodeGoose review pipeline.
 

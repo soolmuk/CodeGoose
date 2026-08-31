@@ -118,18 +118,19 @@
 
 ### 1) goose Desktop에서 바로 실행
 
-> **왜 랜딩 페이지가 필요한가?** GitHub은 허용되지 않은 URL 스킴(`goose://`)을
-> 렌더링된 Markdown에서 제거하기 때문에, README에 딥링크 배지를 직접 넣으면
-> github.com에서 클릭해도 동작하지 않습니다. 아래 랜딩 페이지는 GitHub Pages가
-> 원본 그대로 서빙하므로 `goose://` 버튼이 정상 동작합니다.
+> **클릭 1번이면 goose Desktop이 실행됩니다.** 배지를 누르면 GitHub Pages의
+> 작은 페이지가 열리고 즉시 공식 `goose://` 딥링크 실행을 시도합니다.
+> (GitHub.com은 렌더링 시 커스텀 URL 스킴을 제거하기 때문에, README 안에
+> `goose://` 링크를 직접 넣으면 그곳에서는 죽은 링크가 됩니다.) 자동 실행이
+> 차단되면 그 페이지의 Launch 버튼 또는 아래 수동 폴백을 사용하세요.
 
-**[CodeGoose 런치 페이지](https://soolmuk.github.io/CodeGoose/launch.html)** 를 열고 실행할 러처를 클릭하세요:
+배지를 클릭하면 goose Desktop 실행이 바로 시작됩니다:
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-**[🧐 PR 코드 리뷰 →](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)**
+[![goose Desktop에서 PR 코드 리뷰 실행](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)
 
 로컬에 받아 둔 PR diff를 등급 리뷰합니다.
 
@@ -138,7 +139,7 @@
 </td>
 <td width="50%" valign="top">
 
-**[⚙️ CI 셋업 →](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)**
+[![goose Desktop에서 CI 셋업 실행](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)
 
 대상 저장소에 CodeGoose 리뷰 파이프라인을 깔거나 갱신합니다.
 
