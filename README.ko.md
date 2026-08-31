@@ -260,28 +260,7 @@ GitLab은 추가로 `GITLAB_REVIEW_TOKEN`(`api` 스코프 프로젝트 액세스
 
 ---
 
-## 📐 레시피 · 기여 규칙
-
-- [Recipe Reference](https://goose-docs.ai/docs/guides/recipes/recipe-reference) 스키마 준수
-- 레시피 변경 시 반드시:
-
-  ```bash
-  goose recipe validate <recipe>.yaml
-  python3 scripts/update_deeplinks.py   # docs/launch.html 재생성 + README 폴백 검증
-  ```
-
-- 딥링크 페이로드는 `docs/launch.html`과 두 README 폴백 블록에 렌더링됩니다.
-  `scripts/update_deeplinks.py --check`가 CI에서 드리프트를 잡습니다.
-
-- `codegoose-review`는 **읽기 전용** (빌드·테스트·파일 수정 금지)
-- 프로젝트 특화 지시는 레시피에 하드코딩하지 말고 `--params instructions=` 로 주입
-- CI 하드닝 체크리스트 (템플릿에 이미 반영됨 — 신규 플랫폼도 동일):
-  - 최종 응답만 게시 (`## Summary` 센티널 이후)
-  - 본문 55,000자 클램프
-  - 빈 goose 출력 → 명시적 실패
-  - `concurrency` + `timeout-minutes` 필수
-  - provider API 키 바인딩은 정확히 1개 (플랫폼 표현식 리터럴 보존)
-
+기여 규칙: [CONTRIBUTING.md](CONTRIBUTING.md)
 이슈와 PR을 환영합니다 — PR은 이 저장소 자체의 CodeGoose 리뷰를 통과합니다.
 
 ## 📄 라이선스
