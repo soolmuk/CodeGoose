@@ -41,6 +41,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install verify.py dependency (PyYAML)
+        run: python3 -m pip install --quiet pyyaml==6.0.2
+
       - name: Verify every listed release asset exists
         run: |
           set -eu
