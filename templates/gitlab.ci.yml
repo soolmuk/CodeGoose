@@ -36,21 +36,27 @@ codegoose_review:
         git diff "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" > pr.diff
         cat pr.diff
       } > changes.txt
-    - curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/__RECIPES_REF__/scripts/inline_threads.py -o inline_threads.py
+    # Shared helpers: downloaded from the LATEST CodeGoose release
+    # (release-only distribution; installed workflows track releases
+    # automatically, main is never fetched).
+    - curl -fsSL __RECIPES_BASE__/inline_threads.py -o inline_threads.py
     - '[ -s inline_threads.py ] || { echo "Failed to download inline_threads.py helper" >&2; exit 1; }'
     # Verification-gate helpers (issue #10): the whole region (downloads
     # included) is removed when rendering with --verification off.
     #[verify:begin]
-    - curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/__RECIPES_REF__/scripts/verify_findings.py -o verify_findings.py
+    - curl -fsSL __RECIPES_BASE__/verify_findings.py -o verify_findings.py
     - '[ -s verify_findings.py ] || { echo "Failed to download verify_findings.py helper" >&2; exit 1; }'
-    - curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/__RECIPES_REF__/templates/instructions.reflection.md -o instructions.reflection.md
+    - curl -fsSL __RECIPES_BASE__/instructions.reflection.md -o instructions.reflection.md
     - '[ -s instructions.reflection.md ] || { echo "Failed to download reflection instructions" >&2; exit 1; }'
     #[verify:end]
-    - |
-      cat <<'EOF' > instructions.txt
-      __INSTRUCTIONS__
-      EOF
-      cat changes.txt >> instructions.txt
+    # Review instructions are a release asset: downloaded at CI runtime
+    # (not baked in at render time) so every install uses the latest
+    # reviewed instructions. inline_threads.py lang substitutes
+    # __LANGUAGE__ and fails loudly on leftover placeholder tokens.
+    - curl -fsSL __RECIPES_BASE__/__STYLE_ASSET__ -o instructions.template.md
+    - '[ -s instructions.template.md ] || { echo "Failed to download review instructions" >&2; exit 1; }'
+    - python3 inline_threads.py lang --instruction-file instructions.template.md --language "__LANGUAGE__" --out instructions.txt
+    - cat changes.txt >> instructions.txt
     - |
       set -e
       export __API_KEY_NAME__="$__API_KEY_NAME__"

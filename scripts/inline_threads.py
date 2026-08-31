@@ -579,6 +579,29 @@ def cmd_prepare(args):
     return 0
 
 
+def cmd_lang(args):
+    """Materialize the review-instruction template for this CI run.
+
+    Reads the downloaded instruction asset (which still contains
+    __LANGUAGE__ tokens), substitutes the requested language, and fails
+    loudly if any __TOKEN__ placeholder survives — a half-substituted
+    instruction file would leak literal tokens into the LLM prompt.
+    """
+    src = Path(args.instruction_file).read_text(encoding="utf-8")
+    if not src.strip():
+        raise SystemExit(f"FAIL: instruction file is empty: {args.instruction_file}")
+    text = src.replace("__LANGUAGE__", args.language)
+    import re as _re
+    leftover = _re.findall(r"__[A-Z][A-Z0-9_]*__", text)
+    if leftover:
+        raise SystemExit(
+            f"FAIL: unresolved placeholder tokens in {args.instruction_file}: "
+            f"{sorted(set(leftover))}")
+    Path(args.out).write_text(text, encoding="utf-8")
+    print(f"materialized {args.instruction_file} -> {args.out} (language={args.language})")
+    return 0
+
+
 def cmd_github_payload(args):
     clean = Path(args.body_clean).read_text(encoding="utf-8")
     comments = json.loads(Path(args.threads).read_text(encoding="utf-8"))
@@ -862,6 +885,12 @@ def main():
     gi.add_argument("--commit-id", required=True)
     gi.add_argument("--out", required=True)
     gi.set_defaults(func=cmd_gitea_payload)
+
+    la = sub.add_parser("lang")
+    la.add_argument("--instruction-file", required=True)
+    la.add_argument("--language", required=True)
+    la.add_argument("--out", required=True)
+    la.set_defaults(func=cmd_lang)
 
     sub.add_parser("selftest")
     args = ap.parse_args()

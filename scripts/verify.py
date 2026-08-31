@@ -5,6 +5,14 @@ Usage:
   python3 verify.py <platform> <config-file>
 platform: github | gitlab | gitea | teamcity
 
+  v4 contract (release-only distribution, on top of the v3 gate contract):
+  - every helper/instruction download must come from the CodeGoose release
+    assets base (releases/latest/download/<basename>). Any legacy
+    raw.githubusercontent.com/soolmuk/CodeGoose reference FAILS: consumers
+    must never track a moving git ref.
+  - review instructions are downloaded at CI runtime (release asset) and
+    materialized via 'inline_threads.py lang' (language substitution +
+    leftover-token check), NOT baked in at render time.
   v3 contract (verification gate, issue #10):
   - verification on: the render-time #[verify:begin]/#[verify:end] markers
     are gone, verify_findings.py is downloaded, the reflection + merge steps
@@ -28,8 +36,13 @@ from pathlib import Path
 import yaml
 
 PROVIDER_KEYS = ["OLLAMA_CLOUD_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "FIREWORKS_API_KEY"]
-PLACEHOLDERS = ("__PROVIDER__", "__GOOSE_MODEL__", "__INSTRUCTIONS__", "__API_KEY_NAME__",
-                "__LANGUAGE__", "__RECIPES_REF__", "__VERIFY_PROFILE__", "__VERIFY_MODE__")
+PLACEHOLDERS = ("__PROVIDER__", "__GOOSE_MODEL__", "__API_KEY_NAME__",
+                "__LANGUAGE__", "__RECIPES_BASE__", "__STYLE_ASSET__",
+                "__VERIFY_PROFILE__", "__VERIFY_MODE__")
+
+# Release-only distribution invariants (v4 contract).
+RELEASE_BASE_MARK = "releases/latest/download"
+LEGACY_RAW_MARK = "raw.githubusercontent.com/soolmuk/CodeGoose"
 
 VERIFY_BEGIN = "#[verify:begin]"
 VERIFY_END = "#[verify:end]"
@@ -140,6 +153,24 @@ def common_inline_checks(t, errs):
         errs.append("must run inline_threads prepare (anchor validation + clamp)")
 
 
+def common_release_checks(t, errs):
+    """v4 contract: consumers fetch release assets only, never git refs."""
+    if LEGACY_RAW_MARK in t:
+        errs.append(
+            "legacy raw.githubusercontent.com/soolmuk/CodeGoose reference: "
+            "consumers must fetch releases/latest/download assets only")
+    if RELEASE_BASE_MARK not in t:
+        errs.append("missing releases/latest/download base (release-only distribution)")
+    # Instructions are downloaded at CI runtime and materialized with the
+    # language substitution (substring check tolerant of line wrapping).
+    if "inline_threads.py lang" not in t:
+        errs.append("must materialize instructions via inline_threads.py lang")
+    if "--instruction-file instructions.template.md" not in t:
+        errs.append("must download the style instructions asset and pass it to lang")
+    if "__STYLE_ASSET__" not in t and "instructions.template.md" in t:
+        pass  # style asset name substituted at render; presence checked via PLACEHOLDERS
+
+
 def check_github(t):
     errs = []
     d = yaml.safe_load(t)
@@ -181,6 +212,7 @@ def check_github(t):
     if "actions: write" not in t:
         errs.append("github workflow needs actions: write to upload artifacts")
     common_verify_checks(t, errs)
+    common_release_checks(t, errs)
     for ph in PLACEHOLDERS:
         if ph in t:
             errs.append(f"unsubstituted placeholder: {ph}")
@@ -254,6 +286,7 @@ def check_gitea(t):
     if "head.sha" not in t:
         errs.append("review must be pinned to the PR head sha")
     common_verify_checks(t, errs)
+    common_release_checks(t, errs)
     for ph in PLACEHOLDERS:
         if ph in t:
             errs.append(f"unsubstituted placeholder: {ph}")
@@ -277,6 +310,7 @@ def check_teamcity(t):
     if "pr.diff" not in t:
         errs.append("pr.diff must be produced for anchor validation")
     common_verify_checks(t, errs)
+    common_release_checks(t, errs)
     if "executionTimeout" not in t:
         errs.append("TeamCity build must set executionTimeout")
     for ph in PLACEHOLDERS:

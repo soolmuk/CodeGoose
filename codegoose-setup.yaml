@@ -125,9 +125,8 @@ prompt: |
 
   ## Step 2 — Download and run the renderer ({{ ci_platform }})
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/main/scripts/render.py -o /tmp/render.py
+  curl -fsSL https://github.com/soolmuk/CodeGoose/releases/latest/download/render.py -o /tmp/render.py
   python3 /tmp/render.py {{ ci_platform }} \
-    --ref main \
     --provider {{ ci_provider }} \
     --model {{ goose_model }} \
     --style {{ review_style }} \
@@ -144,7 +143,7 @@ prompt: |
 
   ## Step 3 — Verify (the script's exit code is the contract)
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/main/scripts/verify.py -o /tmp/verify_ci.py
+  curl -fsSL https://github.com/soolmuk/CodeGoose/releases/latest/download/verify.py -o /tmp/verify_ci.py
   python3 /tmp/verify_ci.py {{ ci_platform }} <rendered-config-path>
   ```
   Expected RESULT: PASS. If FAIL, report the failing checks; do NOT hand-patch

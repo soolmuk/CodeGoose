@@ -3,59 +3,81 @@
 
 Usage:
   python3 render.py <platform> --provider P --model M --style S --language L
-    --ref R --verification on|off|shadow [--profile conservative|strict]
+    --verification on|off|shadow [--profile conservative|strict]
+    [--local] [--dry-run]
 
-Reads ./templates/<platform>.* , substitutes placeholders, writes the rendered
-file into the current repo at the platform's canonical target path.
+Fetches the platform template and the review-instructions asset name from
+the LATEST CodeGoose release assets (manifest: scripts/release_assets.txt)
+— never from a moving git ref — substitutes placeholders, and writes the
+rendered file into the current repo at the platform's canonical target
+path. Because templates and helpers are release assets, an installed
+workflow keeps tracking the latest release at CI runtime: the rendered
+config downloads helpers AND instructions from the same latest-release
+base URL that render.py used (release-only distribution model).
+
 Placeholders (all __UPPER__):
-  __PROVIDER__ __GOOSE_MODEL__ __LANGUAGE__ __INSTRUCTIONS__ __API_KEY_NAME__
-  __RECIPES_REF__ (ref used to fetch shared helper scripts at CI runtime)
+  __PROVIDER__ __GOOSE_MODEL__ __LANGUAGE__ __API_KEY_NAME__
   __VERIFY_PROFILE__ __VERIFY_MODE__ (verification gate, on/shadow only)
+  __STYLE_ASSET__ (asset basename, e.g. instructions.graded.md; the
+    rendered config downloads it at CI runtime and substitutes
+    __LANGUAGE__ into it, so instructions are NOT baked in at render time)
 
 Verification gate (issue #10):
   on     templates include the reflection pass + merge gate
   shadow same pipeline, but merge --mode shadow (outcomes logged only)
   off    the #[verify:begin]/#[verify:end] marked region is REMOVED
-  The reflection instructions (templates/instructions.reflection.md) are
-  downloaded at CI runtime with the same curl pattern as inline_threads.py
-  (no placeholder), so a single model/provider/config serves both passes.
+  The reflection instructions (instructions.reflection.md asset) are
+  downloaded at CI runtime with the same pattern as inline_threads.py,
+  so a single model/provider/config serves both passes.
 """
 import argparse
+import os
 import sys
 import urllib.request
 from pathlib import Path
 
+# Release-asset download base: every consumer of CodeGoose fetches from the
+# LATEST published release, never from a moving git ref (README 'Releases &
+# versioning'). Environment override CODEGOOSE_RELEASE_BASE exists for
+# mirrors/testbeds; committed templates always render the canonical base.
+RELEASE_BASE = "https://github.com/soolmuk/CodeGoose/releases/latest/download"
+
+
+def release_base():
+    return os.environ.get("CODEGOOSE_RELEASE_BASE", RELEASE_BASE)
+
+
 SOURCES = {
     "github": {
-        "template": "templates/github.workflow.yml",
+        "template": "github.workflow.yml",
         "target": ".github/workflows/codegoose-review.yml",
         "instructions": {
-            "graded-review": "templates/instructions.graded.md",
-            "changes-summary": "templates/instructions.summary.md",
+            "graded-review": "instructions.graded.md",
+            "changes-summary": "instructions.summary.md",
         },
     },
     "gitlab": {
-        "template": "templates/gitlab.ci.yml",
+        "template": "gitlab.ci.yml",
         "target": ".gitlab-ci.yml",
         "instructions": {
-            "graded-review": "templates/instructions.graded.md",
-            "changes-summary": "templates/instructions.summary.md",
+            "graded-review": "instructions.graded.md",
+            "changes-summary": "instructions.summary.md",
         },
     },
     "gitea": {
-        "template": "templates/gitea.workflow.yml",
+        "template": "gitea.workflow.yml",
         "target": ".gitea/workflows/codegoose-review.yml",
         "instructions": {
-            "graded-review": "templates/instructions.graded.md",
-            "changes-summary": "templates/instructions.summary.md",
+            "graded-review": "instructions.graded.md",
+            "changes-summary": "instructions.summary.md",
         },
     },
     "teamcity": {
-        "template": "templates/teamcity.settings.kts",
+        "template": "teamcity.settings.kts",
         "target": ".teamcity/settings.kts",
         "instructions": {
-            "graded-review": "templates/instructions.graded.md",
-            "changes-summary": "templates/instructions.summary.md",
+            "graded-review": "instructions.graded.md",
+            "changes-summary": "instructions.summary.md",
         },
     },
 }
@@ -124,13 +146,8 @@ def strip_verify_region(text, keep):
 def guard_values(text, template_eof_lines=frozenset()):
     """Harden rendered shells against heredoc/expression accidents."""
     problems = []
-    # Template heredoc terminators are fine; a SUBSTITUTION VALUE that
-    # collapses to a bare EOF line is the hazard. Collect the template's
-    # own terminator positions by inspecting the pre-substitution text.
     for line in text.split("\n"):
         stripped = line.strip()
-        # A substitution value that IS the heredoc terminator would close
-        # the block early and leak the rest as commands.
         if stripped == "EOF" and line not in template_eof_lines:
             problems.append(f"value line is bare 'EOF' (heredoc terminator): {line!r}")
         if "${{" in stripped and "__" in stripped:
@@ -138,9 +155,9 @@ def guard_values(text, template_eof_lines=frozenset()):
     return problems
 
 
-def fetch(repo_file, ref):
-    """Download repo_file@ref from GitHub raw."""
-    url = f"https://raw.githubusercontent.com/soolmuk/CodeGoose/{ref}/{repo_file}"
+def fetch(asset_name):
+    """Download a release asset by basename from the latest release."""
+    url = f"{release_base()}/{asset_name}"
     with urllib.request.urlopen(url, timeout=30) as r:
         return r.read().decode()
 
@@ -172,13 +189,13 @@ def substitute(text, placeholder, value):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("platform", choices=list(SOURCES))
-    ap.add_argument("--ref", default="main", help="branch/ref of soolmuk/CodeGoose")
     ap.add_argument("--provider", required=True)
     ap.add_argument("--model", required=True)
     ap.add_argument("--style", required=True, choices=["graded-review", "changes-summary"])
     ap.add_argument("--language", default="Korean")
     ap.add_argument("--local", action="store_true",
-                    help="render from local templates/ instead of downloading")
+                    help="render from local templates/ instead of release assets "
+                         "(development / pre-release testing only)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--verification", default="on",
                     choices=["on", "off", "shadow"],
@@ -196,15 +213,15 @@ def main():
     spec = SOURCES[args.platform]
     if args.local:
         # Development mode: render straight from the working-tree templates
-        # without network access (used by tests / branch development).
-        template = Path(spec["template"]).read_text()
-        instructions = Path(spec["instructions"][args.style]).read_text()
+        # without network access (used by tests / branch development). Only
+        # the template is needed now: instructions are downloaded at CI
+        # runtime, not baked in here.
+        template = (Path("templates") / spec["template"]).read_text()
     else:
         try:
-            template = fetch(spec["template"], args.ref)
-            instructions = fetch(spec["instructions"][args.style], args.ref)
+            template = fetch(spec["template"])
         except Exception as e:
-            print(f"FAIL: could not download templates from soolmuk/CodeGoose@{args.ref}: {e}")
+            print(f"FAIL: could not download release assets from {release_base()}: {e}")
             return 2
 
     # Verification gate region handling comes FIRST: when off, the whole
@@ -216,22 +233,16 @@ def main():
     body = strip_verify_region(template, keep=args.verification != "off")
     verify_mode = "shadow" if args.verification == "shadow" else "enforce"
 
-    # Substitution order is a CONTRACT: __INSTRUCTIONS__ goes FIRST
-    # because the instruction files themselves contain __LANGUAGE__
-    # placeholders (e.g. instructions.graded.md's language requirements).
-    # A later-ordered __LANGUAGE__ substitution then resolves those
-    # nested tokens correctly. Corollary rule: instruction files must
-    # never contain OTHER placeholder tokens (__PROVIDER__ etc.) as
-    # literal text — they would be substituted unintentionally.
+    # Substitution order is a CONTRACT (see the __LANGUAGE__ note below).
     for placeholder, value in [
-        ("__INSTRUCTIONS__", instructions),
         ("__LANGUAGE__", args.language),
-        ("__RECIPES_REF__", args.ref),
+        ("__RECIPES_BASE__", release_base()),
         ("__PROVIDER__", provider),
         ("__GOOSE_MODEL__", args.model),
         ("__API_KEY_NAME__", API_KEY_NAMES[provider]),
         ("__VERIFY_PROFILE__", args.verify_profile),
         ("__VERIFY_MODE__", verify_mode),
+        ("__STYLE_ASSET__", spec["instructions"][args.style]),
     ]:
         body = substitute(body, placeholder, value)
 
