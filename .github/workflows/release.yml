@@ -48,18 +48,27 @@ jobs:
         run: |
           set -eu
           missing=0
-          while IFS= read -r path; do
+          expected=0
+          # 'read || [ -n "$path" ]' handles a manifest whose last line
+          # lacks a trailing newline; a plain 'while read' silently skips
+          # it (that is exactly how v0.1.0 first attempt lost an asset).
+          while IFS= read -r path || [ -n "$path" ]; do
             case "$path" in ''|'#'*) continue ;; esac
+            expected=$((expected+1))
             if [ ! -s "$path" ]; then
               echo "FAIL: manifest lists '$path' but it is missing or empty at the tagged commit" >&2
               missing=$((missing+1))
             fi
           done < scripts/release_assets.txt
+          if [ "$expected" -lt 11 ]; then
+            echo "FAIL: expected at least 11 manifest entries, parsed $expected (manifest parse bug?)" >&2
+            exit 1
+          fi
           if [ "$missing" -ne 0 ]; then
             echo "Refusing to publish: asset manifest not satisfiable." >&2
             exit 1
           fi
-          echo "OK: all manifest assets present."
+          echo "OK: all $expected manifest assets present."
 
       - name: Helper selftests (render contract depends on them)
         run: |
@@ -115,7 +124,7 @@ jobs:
           set -eu
           # Build the gh release create argument list from the manifest.
           args=()
-          while IFS= read -r path; do
+          while IFS= read -r path || [ -n "$path" ]; do
             case "$path" in ''|'#'*) continue ;; esac
             args+=("$path"#"$(basename "$path")")
           done < scripts/release_assets.txt
