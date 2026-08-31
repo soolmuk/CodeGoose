@@ -284,22 +284,6 @@ GitLab은 추가로 `GITLAB_REVIEW_TOKEN`(`api` 스코프 프로젝트 액세스
 
 이슈와 PR을 환영합니다 — PR은 이 저장소 자체의 CodeGoose 리뷰를 통과합니다.
 
-## 📦 저장소 레이아웃
-
-| 경로 | 역할 |
-|---|---|
-| `codegoose-review.yaml` / `codegoose-setup.yaml` | CodeGoose 레시피 |
-| `templates/` | 플랫폼 CI · 리뷰 지시 · 런치 페이지 템플릿 |
-| `scripts/render.py` | 결정론적 렌더 |
-| `scripts/verify.py` | 렌더 결과 계약 검증 |
-| `scripts/verify_findings.py` | 검증 게이트 (extract / reflect-parse / merge) |
-| `scripts/inline_threads.py` | 파인딩 앵커링 + 플랫폼 게시 페이로드 |
-| `scripts/update_deeplinks.py` | 런치 페이지 재생성 · 드리프트 검사 |
-| `docs/launch.html` | 딥링크 런치 페이지 (GitHub Pages) |
-| `assets/codegoose-icon.png` | 브랜드 아이콘 (랜딩용) |
-
----
-
 ## 📄 라이선스
 
 [Apache License 2.0](LICENSE) 하에 배포됩니다.

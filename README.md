@@ -288,22 +288,6 @@ mis-anchored; if the PR head moves during a run, posting is skipped.
 
 Issues and pull requests welcome — PRs run this repo's own CodeGoose review.
 
-## 📦 Layout
-
-| Path | Role |
-|---|---|
-| `codegoose-review.yaml` / `codegoose-setup.yaml` | CodeGoose recipes |
-| `templates/` | Platform CI, review-instruction and launch-page templates |
-| `scripts/render.py` | Deterministic renderer |
-| `scripts/verify.py` | Render-contract checks |
-| `scripts/verify_findings.py` | Verification gate (extract / reflect-parse / merge) |
-| `scripts/inline_threads.py` | Finding anchoring + platform posting payloads |
-| `scripts/update_deeplinks.py` | Regenerate launch page + drift check |
-| `docs/launch.html` | Deep-link launch page (GitHub Pages) |
-| `assets/codegoose-icon.png` | Brand icon (landing) |
-
----
-
 ## 📄 License
 
 Licensed under the [Apache License 2.0](LICENSE).
