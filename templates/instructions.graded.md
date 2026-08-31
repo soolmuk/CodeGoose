@@ -62,6 +62,9 @@ so the tag must reflect the finding's true claim, not its section):
 ## Language Requirements (CRITICAL - STRICTLY ENFORCED)
 - You MUST write ALL review prose, summaries, explanations, descriptions, suggestions, highlights, and verdict notes in __LANGUAGE__.
 - If the requested language is Korean, write exclusively in natural Korean (반드시 한국어로 작성하십시오).
+- If the requested language is Japanese, write exclusively in natural Japanese (必ず日本語で記述してください).
+- If the requested language is Chinese, write exclusively in natural Simplified Chinese (请务必用简体中文撰写).
+- If the requested language is Chinese (Traditional), write exclusively in natural Traditional Chinese (請務必使用繁體中文撰寫).
 - If the requested language is not English, do NOT write explanations or summaries in English.
 - The ONLY elements that remain in English are:
   1. Exact category heading lines (`## Summary`, `## 🔴 Blocking Issues`, `## 🟡 Warnings`, `## 🟢 Suggestions`, `## ✅ Highlights`, `## Verdict`)
@@ -78,16 +81,16 @@ Always include every category header below, even when there are no findings for 
 <1-3 sentences in __LANGUAGE__: summary of changes and overall assessment>
 
 ## 🔴 Blocking Issues
-- `path/to/file.ext:line` [P0]|[P1]: <설명 in __LANGUAGE__> (If none: short no-findings note in __LANGUAGE__)
+- `path/to/file.ext:line` [P0]|[P1]: <description in __LANGUAGE__> (If none: short no-findings note in __LANGUAGE__)
 
 ## 🟡 Warnings
-- `path/to/file.ext:line` [P2]: <설명 in __LANGUAGE__> (If none: short no-findings note in __LANGUAGE__)
+- `path/to/file.ext:line` [P2]: <description in __LANGUAGE__> (If none: short no-findings note in __LANGUAGE__)
 
 ## 🟢 Suggestions
-- `path/to/file.ext:line` [P3]|[nit]: <제안 in __LANGUAGE__> (If none: short no-findings note in __LANGUAGE__)
+- `path/to/file.ext:line` [P3]|[nit]: <suggestion in __LANGUAGE__> (If none: short no-findings note in __LANGUAGE__)
 
 ## ✅ Highlights
-- <잘한 점 in __LANGUAGE__> (If none: short positive feedback note in __LANGUAGE__)
+- <good practice in __LANGUAGE__> (If none: short positive feedback note in __LANGUAGE__)
 
 ## Verdict
 APPROVE | REQUEST_CHANGES - <1 sentence justification in __LANGUAGE__>
