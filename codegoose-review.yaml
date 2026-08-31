@@ -77,6 +77,9 @@ prompt: |
   ## Language Requirements (CRITICAL - STRICTLY ENFORCED)
   - You MUST write all review prose, summaries, explanations, descriptions, suggestions, highlights, and verdict notes in {{ language }}.
   - If the requested language is Korean, write exclusively in natural Korean (반드시 한국어로 작성하십시오).
+  - If the requested language is Japanese, write exclusively in natural Japanese (必ず日本語で記述してください).
+  - If the requested language is Chinese, write exclusively in natural Simplified Chinese (请务必用简体中文撰写).
+  - If the requested language is Chinese (Traditional), write exclusively in natural Traditional Chinese (請務必使用繁體中文撰寫).
   - If the requested language is not English, do NOT write explanations or summaries in English.
   - The ONLY elements that remain in English are:
     1. Exact category heading lines (## Summary, ## 🔴 Blocking Issues, ## 🟡 Warnings, ## 🟢 Suggestions, ## ✅ Highlights, ## Verdict)

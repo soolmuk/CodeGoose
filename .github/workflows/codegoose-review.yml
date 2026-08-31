@@ -133,6 +133,9 @@ jobs:
           ## Language Requirements (CRITICAL - STRICTLY ENFORCED)
           - You MUST write ALL review prose, summaries, explanations, descriptions, suggestions, highlights, and verdict notes in Korean.
           - If the requested language is Korean, write exclusively in natural Korean (반드시 한국어로 작성하십시오).
+          - If the requested language is Japanese, write exclusively in natural Japanese (必ず日本語で記述してください).
+          - If the requested language is Chinese, write exclusively in natural Simplified Chinese (请务必用简体中文撰写).
+          - If the requested language is Chinese (Traditional), write exclusively in natural Traditional Chinese (請務必使用繁體中文撰寫).
           - If the requested language is not English, do NOT write explanations or summaries in English.
           - The ONLY elements that remain in English are:
             1. Exact category heading lines (`## Summary`, `## 🔴 Blocking Issues`, `## 🟡 Warnings`, `## 🟢 Suggestions`, `## ✅ Highlights`, `## Verdict`)
@@ -149,16 +152,16 @@ jobs:
           <1-3 sentences in Korean: summary of changes and overall assessment>
           
           ## 🔴 Blocking Issues
-          - `path/to/file.ext:line` [P0]|[P1]: <설명 in Korean> (If none: short no-findings note in Korean)
+          - `path/to/file.ext:line` [P0]|[P1]: <description in Korean> (If none: short no-findings note in Korean)
           
           ## 🟡 Warnings
-          - `path/to/file.ext:line` [P2]: <설명 in Korean> (If none: short no-findings note in Korean)
+          - `path/to/file.ext:line` [P2]: <description in Korean> (If none: short no-findings note in Korean)
           
           ## 🟢 Suggestions
-          - `path/to/file.ext:line` [P3]|[nit]: <제안 in Korean> (If none: short no-findings note in Korean)
+          - `path/to/file.ext:line` [P3]|[nit]: <suggestion in Korean> (If none: short no-findings note in Korean)
           
           ## ✅ Highlights
-          - <잘한 점 in Korean> (If none: short positive feedback note in Korean)
+          - <good practice in Korean> (If none: short positive feedback note in Korean)
           
           ## Verdict
           APPROVE | REQUEST_CHANGES - <1 sentence justification in Korean>

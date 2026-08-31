@@ -109,7 +109,7 @@ VERIFICATION_STATS_NOTES = {
     "ja": "- [検証] {kept}件維持 / {demoted}件降格 / {dropped}件除外 — "
           "除外された指摘の詳細はCIログを確認してください。",
     "zh": "- [已验证] 保留 {kept} 项 / 降级 {demoted} 项 / 移除 {dropped} 项 — "
-          "被移除发现的详情请查看 CI 日志。",
+          "有关被移除发现的详情，请查看 CI 日志。",
 }
 
 # Leading bullet prefix of VERIFICATION_STATS_NOTES entries (used both by
@@ -130,24 +130,49 @@ def _warn(msg):
     print(f"WARN: {msg}", file=sys.stderr)
 
 
+# ISO prefix (e.g. "ko-KR") requires a boundary after the code so tokens
+# like "Java" or "JavaScript" cannot match "ja". Plain codes ("ko", "en",
+# "ja", "zh") match the full-string check below.
+_LANG_ISO_PREFIX_RE = re.compile(r"^(ko|en|ja|zh)[-_.]")
+# Explicit allowlist of language names; substring matching here caused
+# false positives ("Java" -> ja, "machine" -> zh via "chin").
+_LANG_NAME_ALLOWLIST = {
+    "ko": ("korean", "한국어", "한국"),
+    "en": ("english",),
+    "ja": ("japanese", "日本語", "日本"),
+    "zh": ("chinese", "中文", "中国", "汉语", "简体中文", "繁体中文",
+           "繁體中文", "漢語"),
+}
+
+
 def _lang_key(lang):
     """Map the __LANGUAGE__ parameter to a note-table key.
 
-    Supported: ko / en / ja (Japanese) / zh (Simplified Chinese). Anything
-    else falls back to English notes with a WARN (fail-safe contract:
-    unknown language must never crash the merge gate).
+    Supported: ko / en / ja (Japanese) / zh (Chinese). Anything else falls
+    back to English notes with a WARN (fail-safe contract: unknown language
+    must never crash the merge gate). Traditional Chinese input ("繁體中文",
+    "Chinese (Traditional)") is accepted and maps to the zh path, whose
+    gate notes are Simplified Chinese — the README documents this
+    Simplified-only note policy.
     """
-    l = (lang or "").strip().lower()
-    if "한국" in l or l.startswith("ko") or "korean" in l:
-        return "ko"
-    if "日本" in l or l.startswith("ja") or "japan" in l:
-        return "ja"
-    if ("中文" in l or "中国" in l or "汉语" in l or "漢" in l
-            or l.startswith("zh") or "chin" in l):
-        return "zh"
-    if l and not l.startswith("en"):
-        # Unknown language: fall back to English notes with a WARN (plan
-        # L96: unknown language -> English fallback + WARN).
+    language = (lang or "").strip().lower()
+    # 1. ISO-style codes and prefixes ("ko", "ko-KR", "ja_JP"): "ja-" needs
+    #    a boundary so "Java" can never match; plain two-letter codes only
+    #    match the whole string.
+    m = _LANG_ISO_PREFIX_RE.match(language)
+    if m:
+        return m.group(1)
+    if language in ("ko", "en", "ja", "zh"):
+        return language
+    # 2. Allowlisted language names only (no loose substring scan).
+    for key, names in _LANG_NAME_ALLOWLIST.items():
+        if any(name in language for name in names):
+            return key
+    # 3. Unknown language: fall back to English notes with a WARN (plan
+    #    L96: unknown language -> English fallback + WARN). Strings that
+    #    merely start with "en" (e.g. "enough") are NOT special-cased; they
+    #    warn and fall back to "en" like every other unknown input.
+    if language:
         _warn(f"unknown language {lang!r}: falling back to English notes")
     return "en"
 
@@ -475,7 +500,7 @@ def _regenerate_verdict(lines, blocking_alive, lang_key):
                "検証を通過した指摘にブロッキング問題はありません。"),
         "zh": ("验证通过的阻断问题仍然存在，合并前需要修复。"
                if blocking_alive else
-               "验证通过的发现在没有阻断问题。"),
+               "验证通过的发现中没有阻断问题。"),
     }
     verdict_word = "REQUEST_CHANGES" if blocking_alive else "APPROVE"
     out, i, found = [], 0, False
@@ -483,7 +508,7 @@ def _regenerate_verdict(lines, blocking_alive, lang_key):
         if VERDICT_RE.match(lines[i]):
             found = True
             out.append("## Verdict")
-            out.append(f"{verdict_word} - {just.get(lang_key, just['en'])}")
+            out.append(f"{verdict_word} - {just[lang_key]}")
             j = i + 1
             while j < len(lines) and not LENIENT_HEADING_RE.match(lines[j]):
                 j += 1
@@ -726,8 +751,7 @@ def merge_body(text, scores, profile="conservative", mode="enforce",
             if token in emptied_sections:
                 # Prose line, not a bullet: must never become an inline
                 # thread candidate downstream.
-                out.append(EMPTY_SECTION_NOTES.get(
-                    lang_key, EMPTY_SECTION_NOTES["en"]))
+                out.append(EMPTY_SECTION_NOTES[lang_key])
     # Insert demoted blocks at each threaded span end (in span order).
     if demote_blocks:
         if warnings_span is None:
@@ -773,8 +797,7 @@ def merge_body(text, scores, profile="conservative", mode="enforce",
                 break
     out, _found_verdict = _regenerate_verdict(out, blocking_alive, lang_key)
 
-    stats_note = VERIFICATION_STATS_NOTES.get(
-        lang_key, VERIFICATION_STATS_NOTES["en"]).format(
+    stats_note = VERIFICATION_STATS_NOTES[lang_key].format(
         kept=kept, demoted=demoted, dropped=dropped)
     body = "\n".join(out)
     if mode == "enforce":
@@ -782,7 +805,7 @@ def merge_body(text, scores, profile="conservative", mode="enforce",
             # D-2 fail-open: the parse "succeeded" but matched nothing —
             # post the ORIGINAL review with the fail-open banner instead
             # of a misleading "[Verified] N kept" note.
-            banner = FAILOPEN_BANNERS.get(lang_key, FAILOPEN_BANNERS["en"]) + \
+            banner = FAILOPEN_BANNERS[lang_key] + \
                 " (no score matched any finding)"
             original = truncate_body(text)
             final_text = banner + "\n\n" + original
@@ -836,7 +859,7 @@ def cmd_merge(args):
 
 def cmd_banner(args):
     """Emit the fail-open banner line for --lang (used by CI templates)."""
-    print(FAILOPEN_BANNERS.get(_lang_key(args.lang), FAILOPEN_BANNERS["en"]))
+    print(FAILOPEN_BANNERS[_lang_key(args.lang)])
     return 0
 
 
@@ -1371,6 +1394,20 @@ def _selftest():
     assert _lang_key("Korean") == "ko"
     assert _lang_key("Portuguese") == "en"  # unknown -> en fallback
     assert _lang_key("") == "en"
+    # ISO codes and prefixed forms
+    assert _lang_key("ko") == "ko" and _lang_key("ko-KR") == "ko"
+    assert _lang_key("ja") == "ja" and _lang_key("ja-JP") == "ja"
+    assert _lang_key("zh") == "zh" and _lang_key("zh-TW") == "zh"
+    assert _lang_key("zh_CN") == "zh" and _lang_key("en") == "en"
+    assert _lang_key("en-US") == "en"
+    # false-positive regressions (CodeRabbit): "Java"/"JavaScript" must
+    # NOT match "ja"; "machine" must NOT match "chin"; "en-"-prefixed
+    # strings containing CJK tokens fall back to English, never ja/zh.
+    assert _lang_key("Java") == "en"
+    assert _lang_key("JavaScript") == "en"
+    assert _lang_key("machine") == "en"
+    assert _lang_key("en-Japan") == "en"
+    assert _lang_key("enough") == "en"
     # every supported language key has a full set of localized strings
     for k in ("ko", "en", "ja", "zh"):
         assert k in EMPTY_SECTION_NOTES, k
@@ -1379,24 +1416,47 @@ def _selftest():
         assert k in STATS_PREFIXES, k
         assert STATS_PREFIXES[k] in VERIFICATION_STATS_NOTES[k], k
 
+    # zh APPROVE-path fixtures: one real low-priority finding, no blocking
+    zh_approve_body = (
+        "## Summary\n摘要。\n"
+        "\n## 🔴 Blocking Issues\n"
+        "- 발견 사항 없음. 영향이 없습니다.\n"
+        "\n## 🟡 Warnings\n"
+        "- 발견 사항 없음. 위험 요소가 없습니다.\n"
+        "\n## 🟢 Suggestions\n"
+        "- `src/a.py:2` [nit] 진짜 파인딩.\n"
+        "\n## ✅ Highlights\n- 좋음\n"
+        "\n## Verdict\nREQUEST_CHANGES.\n"
+    )
+    sc_ok = [{"anchor": "src/a.py:2", "score": 9, "why": ""}]
+
     # Japanese merge: localized stats note + verdict sentence
-    final_ja, rep_ja = merge_body(SAMPLE_BODY, sc_keep_all, "conservative",
-                                  "enforce", "Japanese")
+    final_ja = merge_body(SAMPLE_BODY, sc_keep_all, "conservative",
+                          "enforce", "Japanese")[0]
     assert "[検証]" in final_ja and "件維持" in final_ja, final_ja
     assert "ブロッキング問題" in final_ja, final_ja
     assert "REQUEST_CHANGES" in final_ja
 
     # Chinese merge: localized stats note + verdict sentence
-    final_zh, rep_zh = merge_body(SAMPLE_BODY, sc_keep_all, "conservative",
-                                  "enforce", "Chinese")
+    final_zh = merge_body(SAMPLE_BODY, sc_keep_all, "conservative",
+                          "enforce", "Chinese")[0]
     assert "[已验证]" in final_zh and "保留 4 项" in final_zh, final_zh
     assert "阻断问题" in final_zh, final_zh
     assert "REQUEST_CHANGES" in final_zh
+    # zh verdict prose (blocking alive): the blocker sentence is used and
+    # the old awkward APPROVE wording is gone from the regeneration path.
+    assert "验证通过的阻断问题仍然存在，合并前需要修复。" in final_zh, final_zh
+    assert "发现在没有" not in final_zh, final_zh
+    # zh APPROVE path (no blocking): the regenerated sentence must be the
+    # fixed one (regression test for the awkward "发现在没有" wording).
+    final_zh_ok = merge_body(zh_approve_body, sc_ok, "conservative",
+                             "enforce", "Chinese")[0]
+    assert "验证通过的发现中没有阻断问题。" in final_zh_ok, final_zh_ok
 
     # re-merge idempotency holds for zh (stale-prefix sweep covers all
     # languages, not just ko/en)
-    final_zh2, rep_zh2 = merge_body(final_zh, sc_keep_all, "conservative",
-                                    "enforce", "Chinese")
+    final_zh2 = merge_body(final_zh, sc_keep_all, "conservative",
+                           "enforce", "Chinese")[0]
     assert final_zh2.count("[已验证]") == 1, \
         "re-merging an already-merged zh body must not stack notes"
 
@@ -1415,8 +1475,8 @@ def _selftest():
     assert "未应用验证" in final_zh_bad, final_zh_bad
 
     # unknown language -> English notes (contract preserved)
-    final_un, rep_un = merge_body(SAMPLE_BODY, sc_keep_all, "conservative",
-                                  "enforce", "Portuguese")
+    final_un = merge_body(SAMPLE_BODY, sc_keep_all, "conservative",
+                          "enforce", "Portuguese")[0]
     assert "[Verified]" in final_un and "[검증]" not in final_un, final_un
 
     print("selftest: all checks passed")
