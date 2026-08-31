@@ -130,7 +130,7 @@
 <tr>
 <td width="50%" valign="top">
 
-[![goose Desktop에서 PR 코드 리뷰 실행](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)
+[**🧐 PR 코드 리뷰**&nbsp;&nbsp;![Launch In Desktop](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)
 
 로컬에 받아 둔 PR diff를 등급 리뷰합니다.
 
@@ -139,7 +139,7 @@
 </td>
 <td width="50%" valign="top">
 
-[![goose Desktop에서 CI 셋업 실행](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)
+[**⚙️ CI 셋업**&nbsp;&nbsp;![Launch In Desktop](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)
 
 대상 저장소에 CodeGoose 리뷰 파이프라인을 깔거나 갱신합니다.
 

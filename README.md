@@ -132,7 +132,7 @@ Click a badge — goose Desktop starts automatically:
 <tr>
 <td width="50%" valign="top">
 
-[![Launch PR Code Review In Desktop](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)
+[**🧐 PR Code Review**&nbsp;&nbsp;![Launch In Desktop](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)
 
 Grade a locally downloaded PR diff.
 
@@ -141,7 +141,7 @@ Grade a locally downloaded PR diff.
 </td>
 <td width="50%" valign="top">
 
-[![Launch CI Setup In Desktop](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)
+[**⚙️ CI Setup**&nbsp;&nbsp;![Launch In Desktop](assets/launch-desktop.svg)](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)
 
 Install or refresh the CodeGoose review pipeline.
 
