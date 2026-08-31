@@ -27,6 +27,8 @@ parameters:
     options:
       - Korean
       - English
+      - Japanese
+      - Chinese
 
   - key: review_style
     input_type: select

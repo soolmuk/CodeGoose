@@ -3,6 +3,8 @@ Create a concise summary of the changes provided. Don't provide any session or l
 ## Language Requirements (CRITICAL - STRICTLY ENFORCED)
 - You MUST write the ENTIRE summary and all bullet points in __LANGUAGE__.
 - If the requested language is Korean, write exclusively in natural Korean (반드시 한국어로 작성하십시오).
+- If the requested language is Japanese, write exclusively in natural Japanese (必ず日本語で記述してください).
+- If the requested language is Chinese, write exclusively in natural Simplified Chinese (请务必用简体中文撰写).
 - Keep only file paths, code snippets, and identifiers in English/original form.
 
 ## Output format

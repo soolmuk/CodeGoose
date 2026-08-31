@@ -16,7 +16,7 @@ parameters:
   - key: language
     input_type: string
     requirement: optional
-    description: Output language for review prose (e.g. Korean, English)
+    description: Output language for review prose (e.g. Korean, English, Japanese, Chinese)
     default: "Korean (한국어)"
   - key: instructions
     input_type: string
