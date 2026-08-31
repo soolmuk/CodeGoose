@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Launch CodeGoose · goose Deep Links</title>
+<meta name="description" content="One-click launchers for CodeGoose goose recipes (PR Review & CI Setup) via goose:// deep links." />
+<meta name="robots" content="noindex" />
+<!--
+  GENERATED FILE — do not hand-edit the goose:// payloads below.
+  Source of truth: codegoose-review.yaml / codegoose-setup.yaml.
+  Regenerate with: python3 scripts/update_deeplinks.py
+-->
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --muted: #8b949e;
+    --accent: #4ade80;
+    --accent-2: #22d3ee;
+    --danger: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  header { text-align: center; margin-bottom: 40px; }
+  header img { width: 96px; height: 96px; margin-bottom: 16px; }
+  h1 { font-size: 1.75rem; margin-bottom: 8px; }
+  header p { color: var(--muted); font-size: 1rem; max-width: 640px; margin: 0 auto; line-height: 1.6; }
+  .cards { display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; max-width: 980px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .card h2 { font-size: 1.15rem; }
+  .card p { color: var(--muted); font-size: .92rem; line-height: 1.5; }
+  .launch-btn {
+    display: inline-block;
+    text-align: center;
+    font-weight: 600;
+    font-size: 1rem;
+    color: #0d1117;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    border-radius: 10px;
+    padding: 14px 18px;
+    text-decoration: none;
+    transition: filter .15s ease, transform .08s ease;
+  }
+  .launch-btn:hover { filter: brightness(1.08); }
+  .launch-btn:active { transform: scale(.98); }
+  .fallback {
+    border-top: 1px dashed var(--border);
+    padding-top: 12px;
+    font-size: .85rem;
+    color: var(--muted);
+  }
+  .fallback summary { cursor: pointer; color: var(--accent-2); font-weight: 600; }
+  .fallback textarea {
+    width: 100%;
+    height: 84px;
+    margin-top: 8px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .72rem;
+    resize: vertical;
+  }
+  .fallback .hint { margin-top: 6px; display: block; }
+  footer {
+    margin-top: 40px;
+    color: var(--muted);
+    font-size: .85rem;
+    text-align: center;
+    line-height: 1.7;
+  }
+  footer a { color: var(--accent-2); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  .warn {
+    display: none;
+    background: rgba(248,113,113,.12);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    border-radius: 10px;
+    padding: 12px 16px;
+    max-width: 640px;
+    margin-bottom: 32px;
+    font-size: .9rem;
+    text-align: center;
+    line-height: 1.5;
+  }
+  kbd {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: .85em;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <img src="codegoose-icon.png" alt="CodeGoose" />
+    <h1>Launch CodeGoose</h1>
+    <p>
+      These buttons run <strong>goose</strong> recipes on this machine via
+      <code>goose://recipe?config=...</code> deep links.
+      goose Desktop must be installed; the first run shows a <em>Trust &amp; Execute</em> prompt.
+      On GitHub.com itself these buttons are inert (GitHub strips <code>goose://</code> links),
+      which is why this page exists.
+    </p>
+  </header>
+
+  <div id="warn" class="warn">
+    ℹ️ If goose did not open: goose Desktop may not be installed, or this
+    browser blocked the protocol handler. Open the fallback below and paste
+    the link into your browser's address bar.
+  </div>
+
+  <main class="cards">
+    <section class="card" id="pr-review">
+      <h2>🧐 PR Code Review</h2>
+      <p>
+        Grade a locally downloaded PR diff (Blocking / Warning / Suggestion / Highlight + Verdict).
+        Read-only. You will be asked for the <code>pr_directory</code> path.
+      </p>
+      <a class="launch-btn" href="goose://recipe?config=__DL_REVIEW__">
+        Launch PR Code Review
+      </a>
+      <details class="fallback">
+        <summary>Deep link not working? Copy it manually</summary>
+        <textarea readonly spellcheck="false">
+goose://recipe?config=__DL_REVIEW__
+        </textarea>
+        <span class="hint">Paste into your browser's address bar, press <kbd>Enter</kbd> → <strong>Open Goose.app</strong>.</span>
+      </details>
+    </section>
+
+    <section class="card" id="ci-setup">
+      <h2>⚙️ CI Setup</h2>
+      <p>
+        Install or refresh the CodeGoose review pipeline on GitHub / GitLab / Gitea / TeamCity.
+        Platform, language, style, provider and model are chosen via dropdowns.
+      </p>
+      <a class="launch-btn" href="goose://recipe?config=__DL_SETUP__">
+        Launch CI Setup
+      </a>
+      <details class="fallback">
+        <summary>Deep link not working? Copy it manually</summary>
+        <textarea readonly spellcheck="false">
+goose://recipe?config=__DL_SETUP__
+        </textarea>
+        <span class="hint">Paste into your browser's address bar, press <kbd>Enter</kbd> → <strong>Open Goose.app</strong>.</span>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    Source of truth: <a href="https://github.com/soolmuk/CodeGoose">soolmuk/CodeGoose</a> ·
+    <a href="https://goose-docs.ai/docs/guides/recipes/session-recipes">goose recipe docs</a><br/>
+    Generated by <code>scripts/update_deeplinks.py</code> — do not hand-edit the payloads.
+  </footer>
+
+<script>
+  // Minimal UX polish: if the OS has no goose:// handler, the page stays
+  // visible after a click and we surface the manual fallback hint.
+  document.querySelectorAll(".launch-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var t0 = Date.now();
+      setTimeout(function () {
+        if (!document.hidden && Date.now() - t0 > 2400) {
+          var w = document.getElementById("warn");
+          if (w) w.style.display = "block";
+        }
+      }, 2500);
+    });
+  });
+</script>
+</body>
+</html>

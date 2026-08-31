@@ -1,0 +1,174 @@
+version: "1.0.0"
+title: "CodeGoose CI Setup"
+description: >
+  If this repo has no goose AI code review CI, create the config file for the
+  selected platform; if one exists, update it to match the chosen options.
+  CI platform (github/gitlab/gitea/teamcity), review comment language, PR comment
+  style, and LLM provider are all chosen via dropdowns. Based on the official
+  goose CI/CD tutorial (https://goose-docs.ai/docs/tutorials/cicd).
+  The generated config is rendered deterministically from templates in
+  soolmuk/CodeGoose (scripts/render.py), NOT authored by the LLM.
+
+parameters:
+  - key: ci_platform
+    input_type: select
+    requirement: required
+    description: CI platform to set up (goose reviews pull requests / MRs there)
+    options:
+      - github
+      - gitlab
+      - gitea
+      - teamcity
+
+  - key: output_language
+    input_type: select
+    requirement: required
+    description: Language for review comments and the setup report
+    options:
+      - Korean
+      - English
+
+  - key: review_style
+    input_type: select
+    requirement: required
+    description: What the CI posts on the pull request
+    options:
+      - graded-review
+      - changes-summary
+
+  - key: ci_provider
+    input_type: select
+    requirement: required
+    description: LLM provider used by goose in CI
+    options:
+      - ollama_cloud
+      - anthropic
+      - openai
+      - openrouter
+      - fireworks-ai
+
+  - key: goose_model
+    input_type: string
+    requirement: required
+    description: Model name for GOOSE_MODEL in the CI config
+      (e.g. glm-5.3 for ollama_cloud, claude-sonnet-4-5 for anthropic,
+      gpt-4o for openai, anthropic/claude-sonnet-4 for openrouter,
+      accounts/fireworks/models/deepseek-v4-flash-0731 for fireworks-ai)
+
+  - key: verification_gate
+    input_type: select
+    requirement: required
+    description: >
+      Review verification gate (issue #10). After the first review pass, a
+      single reflection pass re-checks every finding (0-10 validity score)
+      and a deterministic merge gate keeps/demotes/drops findings.
+      on = gate enforced; shadow = gate outcomes recorded in CI logs only
+      (posted review is the unmodified first pass); off = no verification
+      step. Cost: on/shadow roughly doubles the LLM spend per review.
+    options:
+      - "on"
+      - "off"
+      - shadow
+
+  - key: verify_gate_profile
+    input_type: select
+    requirement: required
+    description: >
+      Gate profile. conservative = unmatched findings are kept, P0/P1
+      findings with a 4-6 validity score are demoted to Warnings.
+      strict = unmatched findings are dropped, and the same thresholds
+      apply to every priority (score <= 4 drop, 5-7 demote, >= 8 keep).
+      Keep the default unless shadow measurements justify tightening.
+    options:
+      - conservative
+      - strict
+
+extensions:
+  - type: builtin
+    name: developer
+
+settings:
+  temperature: 0.1
+
+prompt: |
+  You are a CI/CD setup specialist for goose. Set up goose AI code review CI for
+  THIS repository (the current working directory) on {{ ci_platform }}.
+
+  ## CRITICAL: You are a driver, not an author.
+  Do NOT write CI YAML by hand. The rendered configs are PRODUCED by the shared
+  pipeline in soolmuk/CodeGoose: a python renderer downloads platform
+  templates from that repo and substitutes parameters deterministically.
+  Your job: (1) select parameters, (2) RUN the scripts, (3) report. Never
+  hand-edit the generated config; if something is wrong, fix the templates in
+  soolmuk/CodeGoose instead.
+
+  ## Parameters (chosen by the user via this recipe)
+  - ci_platform: {{ ci_platform }}
+  - output_language: {{ output_language }}
+  - review_style: {{ review_style }}
+  - ci_provider: {{ ci_provider }}
+  - goose_model: {{ goose_model }}
+  - verification_gate: {{ verification_gate }}
+  - verify_gate_profile: {{ verify_gate_profile }}
+  (Provider -> secret name: ollama_cloud=OLLAMA_CLOUD_API_KEY,
+  anthropic=ANTHROPIC_API_KEY, openai=OPENAI_API_KEY, openrouter=OPENROUTER_API_KEY,
+  fireworks-ai=FIREWORKS_API_KEY)
+
+  ## Step 1 — Inspect (read-only)
+  Check for existing CI configs: github `.github/workflows/*.yml`,
+  gitlab `.gitlab-ci.yml`, gitea `.gitea/workflows/*.yml`, teamcity `.teamcity/*.kts`.
+  If an existing config was rendered by this pipeline before (it carries the
+  marker comment `Rendered by soolmuk/CodeGoose`), it will be overwritten
+  by the same renderer — that is expected drift control.
+
+  ## Step 2 — Download and run the renderer ({{ ci_platform }})
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/main/scripts/render.py -o /tmp/render.py
+  python3 /tmp/render.py {{ ci_platform }} \
+    --ref main \
+    --provider {{ ci_provider }} \
+    --model {{ goose_model }} \
+    --style {{ review_style }} \
+    --language {{ output_language }} \
+    --verification {{ verification_gate }} \
+    --verify-profile {{ verify_gate_profile }}
+  ```
+
+  Note for teamcity: the renderer produces `.teamcity/settings.kts`; the review
+  text is published as the build artifact `pr_review.txt` (TeamCity cannot post
+  forge comments without extra REST setup).
+  For gitea: the user must also add a `REVIEW_TOKEN` secret (Gitea access token
+  with write permission) — include that in the report.
+
+  ## Step 3 — Verify (the script's exit code is the contract)
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/main/scripts/verify.py -o /tmp/verify_ci.py
+  python3 /tmp/verify_ci.py {{ ci_platform }} <rendered-config-path>
+  ```
+  Expected RESULT: PASS. If FAIL, report the failing checks; do NOT hand-patch
+  the config. Fixes belong in soolmuk/CodeGoose templates/scripts.
+
+  ## Step 4 — Report (in {{ output_language }})
+  - Status (created/updated) + config file path, and that it was rendered by the
+    deterministic pipeline (not authored by the LLM).
+  - GOOSE_MODEL: {{ goose_model }} (hardcoded into the config by the renderer).
+  - Provider secret that the user must add, e.g. for {{ ci_provider }} the
+    required repo secret name from the mapping above.
+  - How to trigger: open/update a pull request; CI posts the {{ review_style }}
+    result in {{ output_language }}.
+  - For graded reviews the CI also posts up to 10 diff-anchored inline comments
+    (like CodeRabbit): each finding is validated against the PR/MR diff before
+    posting, and findings that cannot be anchored are recapped in the summary
+    comment instead — nothing is silently dropped.
+  - Verification gate ({{ verification_gate }} profile {{ verify_gate_profile }}):
+    when on/shadow, every finding is re-verified by a second goose pass
+    (reflection) before posting; refuted findings are removed, plausible-but-
+    unverified blockers are demoted to Warnings, and the verdict is recomputed.
+    The posted review notes how many findings were kept/demoted/dropped; the
+    dropped details live in the CI job log (dropped.json artifact), never
+    silently lost. Shadow mode records outcomes without changing the post.
+    Cost note: on/shadow ≈ 2x LLM spend per review; choose off to disable.
+  - Reminder: if this repo already has a CodeGoose-rendered CI config, this
+    run re-renders it in place (that is the intended drift control).
+
+  Do NOT git commit or push. Do NOT touch other files.

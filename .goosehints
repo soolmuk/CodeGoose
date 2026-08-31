@@ -1,0 +1,45 @@
+# goose-recipes — 저장소 개발 규칙
+
+이 저장소는 goose 레시피 배포 저장소이다. 산출물의 진실 원천(Source of Truth)은
+**레시피 YAML**이고, 그 외 CI 설정 파일은 모두 실행 결과물(artifact)이다.
+
+## 강제 규칙
+
+0. **결정론적 렌더 파이프라인 (2026-08-29 도입, 아래 규칙의 상위 근거)**
+   - CI 산출물은 LLM이 저작하지 않는다. `scripts/render.py`가 `templates/`를
+     다운로드해 파라미터를 치환(결정론적)하고 `scripts/verify.py`가 exit code로
+     검증한다. 레시피 프롬프트는 이 파이프라인의 "드라이버" 역할만 한다.
+   - 템플릿/스크립트/공용 지시문(instructions.*.md)은 모두 이 저장소의 파일이
+     진실 원천이며, `__PLACEHOLDER__` 치환은 render.py가 수행한다.
+
+1. **생성물을 손으로 직접 수정하지 않는다.**
+   `codegoose-setup.yaml` 레시피가 생성하는 파일(예: `.github/workflows/codegoose-review.yml`,
+   `.gitlab-ci.yml`, `.gitea/workflows/*.yml`, `.teamcity/settings.kts`)에 결함을 발견하면
+   이 저장소의 해당 파일을 직접 수정하지 않는다. 손패치는 다음 레시피 실행 시 덮어써져
+   무의미하다(uncontrolled drift).
+
+2. **개선은 레시피에 반영하고, 산출물은 레시피 실행으로 만든다.**
+   - 결함 수정 / 기능 개선은 항상 `codegoose-setup.yaml`의 플랫폼 템플릿·공용 지시문에 반영.
+   - 워크플로 재생성은 이 저장소의 레시피를 실행해서 수행한다
+     (`goose run --recipe codegoose-setup ...` 또는 Desktop deeplink 실행).
+   - 로컬에서 대상 CI 파일을 곧바로 고치는 "핫픽스"는 하지 않는다.
+
+3. **레시피 수정 후 필수 검증 체인 (건너뛰지 않는다):**
+   ```bash
+   goose recipe validate <recipe>.yaml
+   goose recipe deeplink <recipe>.yaml   # 생성된 링크로 README 배지 갱신
+   ```
+   README의 `goose://recipe?config=...` 딥링크는 레시피 내용의 base64 인코딩이므로,
+   레시피를 바꾸고 딥링크를 갱신하지 않으면 사용자에게 구버전이 배포된다.
+
+4. **CI 파이프라인 하드닝 체크리스트** (레시피 템플릿에 이미 규정됨 — 새 플랫폼 템플릿도 동일 적용):
+   - goose의 세션 배너 / 툴 트랜스크립트를 PR/MR 댓글에 절대 게시하지 않는다.
+     최종 응답만 추출(첫 `## Summary` 센티널 이후)해서 게시한다.
+   - 게시 본문은 플랫폼 한도 이하로 클램프한다(≤55,000 bytes, 초과 시 잘라내고 사유 표기).
+   - goose 출력이 비면 조용히 성공 처리하지 않는다(명시적으로 실패 처리 + 원인 로그).
+   - `concurrency`(PR 단위 취소)와 `timeout-minutes`는 필수.
+   - provider API 키 바인딩은 정확히 1개. 플랫폼 표현식(`${{ ... }}`, `$CI_*`, `%param%`)은 리터럴 보존.
+
+5. **교훈(2026-08-29, PR #1 실측):** 1세대 워크플로는 세션 배너·툴 트랜스크립트가
+   리뷰 댓글에 통째로 유출되었고, 65,536자 상한 초과로 본문이 잘려 Verdict가 소실되었다.
+   위 하드닝 규칙은 이 실패의 재발 방지용이다. 산출물이 아니라 레시피에 반영한다.

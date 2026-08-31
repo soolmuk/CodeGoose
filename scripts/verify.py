@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+"""Deterministic verifier for rendered CI configs. Exit code is the contract.
+
+Usage:
+  python3 verify.py <platform> <config-file>
+platform: github | gitlab | gitea | teamcity
+
+  v3 contract (verification gate, issue #10):
+  - verification on: the render-time #[verify:begin]/#[verify:end] markers
+    are gone, verify_findings.py is downloaded, the reflection + merge steps
+    run in the SAME run block as the first goose call, and the fail-open
+    banner fallback exists. verify_findings.py selftest must pass.
+  - verification off/shadow: off => no verify_findings.py references at all;
+    shadow => merge runs with --mode shadow.
+  - timeout literals: 25 minutes on every platform.
+  v2 contract (inline-review-threads):
+  - The final response must still be extracted via the `## Summary` sentinel.
+  - The 55,000-char clamp and thread->diff-anchor validation moved into the
+    shared helper scripts/inline_threads.py; every template must run it.
+  - GitHub / Gitea post a PR review with diff-anchored comments (falling back
+    to a plain comment), GitLab posts the summary note + diff discussions,
+    TeamCity keeps the artifact flow but with a cleaned body.
+"""
+import subprocess
+import sys
+from pathlib import Path
+
+import yaml
+
+PROVIDER_KEYS = ["OLLAMA_CLOUD_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "FIREWORKS_API_KEY"]
+PLACEHOLDERS = ("__PROVIDER__", "__GOOSE_MODEL__", "__INSTRUCTIONS__", "__API_KEY_NAME__",
+                "__LANGUAGE__", "__RECIPES_REF__", "__VERIFY_PROFILE__", "__VERIFY_MODE__")
+
+VERIFY_BEGIN = "#[verify:begin]"
+VERIFY_END = "#[verify:end]"
+
+
+def verification_mode_of(t):
+    """Detect the rendered verification mode from the config text."""
+    if VERIFY_BEGIN in t or VERIFY_END in t:
+        # Rendered on/shadow configs have the markers stripped; their
+        # presence means this text is an un-rendered raw template.
+        return "raw-template"
+    if "verify_findings.py" in t:
+        if "--mode shadow" in t:
+            return "shadow"
+        if "--mode enforce" in t:
+            return "on"
+    return "off"
+
+
+def common_verify_checks(t, errs):
+    """Verification-gate checks shared by all platforms (v3 contract)."""
+    mode = verification_mode_of(t)
+    if mode == "raw-template":
+        errs.append("verify markers survived rendering; re-render with scripts/render.py")
+        return mode
+    # Deterministic-pipeline invariant: the first-pass goose call runs
+    # exactly ONCE per config (a duplicated first-pass block after the
+    # gate would overwrite the merged body.md and kill the gate results —
+    # the exact failure mode caught in review).
+    if t.count("goose run --instructions instructions.txt") != 1:
+        errs.append(
+            f"expected exactly 1 first-pass 'goose run --instructions "
+            f"instructions.txt', found "
+            f"{t.count('goose run --instructions instructions.txt')}")
+    if mode in ("on", "shadow"):
+        for frag in (
+            "verify_findings.py extract --body body.md",
+            "verify_findings.py reflect-parse",
+            "verify_findings.py merge --body body.md",
+            "instructions.reflection.md",
+        ):
+            if frag not in t:
+                errs.append(f"verification gate missing step: {frag}")
+        if "reflection_input.txt" not in t:
+            errs.append("verification gate must run goose with reflection_input.txt")
+        # reflect_raw must not flow into the posting path (body.md only).
+        if "reflect_raw" in t.split("prepare --body body.md")[-1]:
+            errs.append("reflect_raw files must not flow into the posting path")
+        # merge --out-final body.md must be the LAST writer of body.md
+        # before prepare: any subsequent overwrite of body.md discards
+        # the gate's keep/demote/drop decisions. Check AFTER the LAST
+        # merge occurrence (the retry path merges twice by design).
+        gate_out_idx = t.rfind("merge --body body.md")
+        # Skip past the merge command itself (its own --out-final is
+        # legitimate); look for overwriters AFTER the command ends.
+        gate_cmd_end = t.find("--lang", gate_out_idx)
+        if gate_cmd_end >= 0:
+            gate_cmd_end = t.find("\n", gate_cmd_end)
+        if gate_cmd_end is not None and gate_cmd_end >= 0:
+            gate_out_idx = gate_cmd_end
+        prep_idx = t.find("prepare --body body.md")
+        if gate_out_idx >= 0 and prep_idx > gate_out_idx:
+            between = t[gate_out_idx:prep_idx]
+            for overwriter in ("--out body.md", "--out-final body.md",
+                               "--raw raw.txt"):
+                if overwriter in between:
+                    errs.append(
+                        f"body.md is re-written after the merge gate "
+                        f"({overwriter!r} between merge and prepare); "
+                        "the gate results would be discarded")
+        if mode == "shadow" and "--mode shadow" not in t:
+            errs.append("shadow mode must pass --mode shadow to merge")
+    else:
+        if "verify_findings.py" in t:
+            errs.append("verification off but verify_findings.py still referenced")
+        if "reflection_input" in t:
+            errs.append("verification off but reflection steps still referenced")
+        if t.count("goose run --instructions") != 1:
+            errs.append(
+                "verification off must run goose exactly once "
+                f"(found {t.count('goose run --instructions')})")
+    return mode
+
+
+def helper_selftest_errors():
+    """Run the shared helper's built-in checks when it sits next to this script."""
+    helper = Path(__file__).with_name("inline_threads.py")
+    if not helper.exists():
+        return []
+    r = subprocess.run([sys.executable, str(helper), "selftest"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return [f"inline_threads.py selftest failed: {r.stdout} {r.stderr}"]
+    errs = []
+    helper2 = Path(__file__).with_name("verify_findings.py")
+    if helper2.exists():
+        r2 = subprocess.run([sys.executable, str(helper2), "selftest"],
+                            capture_output=True, text=True)
+        if r2.returncode != 0:
+            errs.append(f"verify_findings.py selftest failed: {r2.stdout} {r2.stderr}")
+    return errs
+
+
+def common_inline_checks(t, errs):
+    if "inline_threads.py" not in t:
+        errs.append("must fetch scripts/inline_threads.py")
+    if "prepare --body body.md" not in t:
+        errs.append("must run inline_threads prepare (anchor validation + clamp)")
+
+
+def check_github(t):
+    errs = []
+    d = yaml.safe_load(t)
+    # YAML 1.1: bare `on:` parses as boolean True
+    trigger = d.get("on") or d.get(True) or {}
+    if list(trigger.keys() if isinstance(trigger, dict) else []) != ["pull_request"]:
+        errs.append("trigger must be pull_request only")
+    if "codegoose-review" not in d.get("jobs", {}):
+        errs.append("missing jobs.codegoose-review")
+    else:
+        job = d["jobs"]["codegoose-review"]
+        if job.get("timeout-minutes") != 25:
+            errs.append("missing timeout-minutes: 25")
+    if "concurrency" not in d:
+        errs.append("missing concurrency group")
+    if d.get("permissions", {}).get("pull-requests") != "write":
+        errs.append("missing pull-requests:write")
+    key_refs = sum(t.count(f"secrets.{k}") for k in PROVIDER_KEYS)
+    if key_refs != 1:
+        errs.append(f"expected exactly 1 secrets.*_API_KEY binding, found {key_refs}")
+    if "gh pr comment" not in t:
+        errs.append("must post via gh pr comment")
+    if "inline_threads.py extract --raw" not in t \
+            and "re.finditer(r'(?m)^## Summary', raw)" not in t:
+        errs.append("must extract only final response via ## Summary sentinel")
+    if t.count("exit 1") < 1:
+        errs.append("empty-review must fail the job explicitly")
+    common_inline_checks(t, errs)
+    if "github-payload" not in t or "/reviews" not in t:
+        errs.append("must post inline comments through the PR review API")
+    if "gh pr comment" not in t:
+        errs.append("must keep a gh pr comment fallback")
+    if "falling back to a plain comment" not in t:
+        errs.append("inline failures must fall back to a plain comment")
+    if "head.sha" not in t:
+        errs.append("review must be pinned to the PR head sha")
+    if "actions/upload-artifact" not in t:
+        errs.append("github workflow must upload the verification-gate artifacts")
+    if "actions: write" not in t:
+        errs.append("github workflow needs actions: write to upload artifacts")
+    common_verify_checks(t, errs)
+    for ph in PLACEHOLDERS:
+        if ph in t:
+            errs.append(f"unsubstituted placeholder: {ph}")
+    return errs
+
+
+def check_gitlab(t):
+    errs = []
+    d = yaml.safe_load(t)  # syntax
+    if "merge_request_event" not in t:
+        errs.append("MR trigger missing")
+    if "codegoose_review" not in d:
+        errs.append("missing job codegoose_review")
+    else:
+        job = d["codegoose_review"]
+        if job.get("timeout") != "25 minutes":
+            errs.append("missing timeout: 25 minutes")
+    if "inline_threads.py extract --raw" not in t and "re.finditer(r'(?m)^## Summary', raw)" not in t:
+        errs.append("must extract only final response via ## Summary sentinel")
+    if t.count("exit 1") < 1:
+        errs.append("empty-review must fail the job explicitly")
+    if sum(t.count(k) for k in PROVIDER_KEYS) < 1:
+        errs.append("provider key binding missing")
+    common_inline_checks(t, errs)
+    # diff-anchored discussions need the 3-sha position from the versions data
+    for frag in ('position_type: "text"', "head_sha", "base_sha", "start_sha",
+                 "new_path", "new_line"):
+        if frag not in t:
+            errs.append(f"diff discussion payload missing {frag}")
+    if "/notes" not in t:
+        errs.append("summary note posting missing")
+    if "/discussions" not in t:
+        errs.append("inline discussion posting missing")
+    if "pr.diff" not in t:
+        errs.append("pr.diff must be produced for anchor validation")
+    common_verify_checks(t, errs)
+    for ph in PLACEHOLDERS:
+        if ph in t:
+            errs.append(f"unsubstituted placeholder: {ph}")
+    return errs
+
+
+def check_gitea(t):
+    errs = []
+    d = yaml.safe_load(t)
+    trigger = d.get("on") or d.get(True) or {}
+    if list(trigger.keys() if isinstance(trigger, dict) else []) != ["pull_request"]:
+        errs.append("trigger must be pull_request only")
+    if "codegoose-review" not in d.get("jobs", {}):
+        errs.append("missing jobs.codegoose-review")
+    else:
+        job = d["jobs"]["codegoose-review"]
+        if job.get("timeout-minutes") != 25:
+            errs.append("missing timeout-minutes: 25")
+    if "concurrency" not in d:
+        errs.append("missing concurrency group")
+    if "permissions" in d:
+        errs.append("gitea template must NOT have permissions block")
+    key_refs = sum(t.count(f"secrets.{k}") for k in PROVIDER_KEYS)
+    if key_refs < 1:
+        errs.append("provider key binding missing")
+    if "REVIEW_TOKEN" not in t:
+        errs.append("REVIEW_TOKEN secret binding missing")
+    if "inline_threads.py extract --raw" not in t and "re.finditer(r'(?m)^## Summary', raw)" not in t:
+        errs.append("must extract only final response via ## Summary sentinel")
+    common_inline_checks(t, errs)
+    if "/pulls/" not in t or "/reviews" not in t:
+        errs.append("must try the PR review API with inline comments")
+    if "/issues/" not in t or "/comments" not in t:
+        errs.append("must keep the plain-comment fallback")
+    if "head.sha" not in t:
+        errs.append("review must be pinned to the PR head sha")
+    common_verify_checks(t, errs)
+    for ph in PLACEHOLDERS:
+        if ph in t:
+            errs.append(f"unsubstituted placeholder: {ph}")
+    return errs
+
+
+def check_teamcity(t):
+    errs = []
+    if "GOOSE_PROVIDER" not in t:
+        errs.append("env.GOOSE_PROVIDER parameter missing")
+    if "GOOSE_MODEL" not in t:
+        errs.append("env.GOOSE_MODEL parameter missing")
+    if sum(t.count(k) for k in PROVIDER_KEYS) < 1:
+        errs.append("provider key binding missing")
+    if "inline_threads.py extract --raw" not in t and "re.finditer(r'(?m)^## Summary', raw)" not in t:
+        errs.append("must extract only final response via ## Summary sentinel")
+    if "inline_threads.py" not in t or "prepare --body body.md" not in t:
+        errs.append("must run inline_threads prepare (threads block stripped + clamp)")
+    if "pr_review.txt" not in t:
+        errs.append("pr_review.txt artifact missing")
+    if "pr.diff" not in t:
+        errs.append("pr.diff must be produced for anchor validation")
+    common_verify_checks(t, errs)
+    if "executionTimeout" not in t:
+        errs.append("TeamCity build must set executionTimeout")
+    for ph in PLACEHOLDERS:
+        if ph in t:
+            errs.append(f"unsubstituted placeholder: {ph}")
+    return errs
+
+
+CHECKERS = {
+    "github": check_github,
+    "gitlab": check_gitlab,
+    "gitea": check_gitea,
+    "teamcity": check_teamcity,
+}
+
+
+def main():
+    if len(sys.argv) != 3:
+        print("usage: verify.py <platform> <config-file>")
+        return 2
+    platform, path = sys.argv[1], sys.argv[2]
+    if platform not in CHECKERS:
+        print("FAIL: unknown platform", platform)
+        return 2
+    if path == "-":
+        t = sys.stdin.read()
+    else:
+        t = Path(path).read_text(encoding="utf-8", errors="ignore")
+    errs = helper_selftest_errors() + CHECKERS[platform](t)
+    for e in errs:
+        print("FAIL:", e)
+    print("RESULT:", "PASS" if not errs else "FAIL")
+    return 1 if errs else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

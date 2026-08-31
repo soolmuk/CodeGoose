@@ -1,0 +1,206 @@
+# Rendered by soolmuk/CodeGoose scripts/render.py - do not hand-edit.
+name: CodeGoose AI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: codegoose-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  codegoose-review:
+    name: CodeGoose AI Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install goose CLI
+        run: |
+          curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
+            | GOOSE_VERSION=v1.48.0 CONFIGURE=false GOOSE_BIN_DIR=/home/runner/.local/bin bash
+          echo "/home/runner/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Configure goose
+        run: |
+          mkdir -p ~/.config/goose
+          cat <<'EOF' > ~/.config/goose/config.yaml
+          GOOSE_PROVIDER: __PROVIDER__
+          GOOSE_MODEL: __GOOSE_MODEL__
+          keyring: false
+          EOF
+
+      - name: Gather PR information
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr diff "${{ github.event.pull_request.number }}" > pr.diff
+          {
+            echo "# Pull Request"
+            gh pr view "${{ github.event.pull_request.number }}"
+            echo ""
+            echo "# Files Changed"
+            gh pr diff "${{ github.event.pull_request.number }}" --name-only
+            echo ""
+            echo "# Changes (diff)"
+            cat pr.diff
+          } > changes.txt
+          # Shared helper: diff-line validation + UTF-8 safe clamping
+          curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/__RECIPES_REF__/scripts/inline_threads.py -o inline_threads.py
+          [ -s inline_threads.py ] || { echo "Failed to download inline_threads.py helper" >&2; exit 1; }
+          #[verify:begin]
+          # Verification-gate helpers (issue #10): downloaded even when the
+          # gate runs; the whole region (downloads included) is removed
+          # when rendering with --verification off.
+          curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/__RECIPES_REF__/scripts/verify_findings.py -o verify_findings.py
+          [ -s verify_findings.py ] || { echo "Failed to download verify_findings.py helper" >&2; exit 1; }
+          curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/__RECIPES_REF__/templates/instructions.reflection.md -o instructions.reflection.md
+          [ -s instructions.reflection.md ] || { echo "Failed to download reflection instructions" >&2; exit 1; }
+          #[verify:end]
+
+      - name: Write instructions
+        run: |
+          cat <<'EOF' > instructions.txt
+          __INSTRUCTIONS__
+          EOF
+          cat changes.txt >> instructions.txt
+
+      - name: Run goose
+        env:
+          __API_KEY_NAME__: ${{ secrets.__API_KEY_NAME__ }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          goose run --instructions instructions.txt > raw.txt
+          python3 inline_threads.py extract --raw raw.txt --out body.md || true
+          if [ ! -s body.md ]; then
+            echo "goose produced no final review (no '## Summary' sentinel in output)" >&2
+            tail -n 40 raw.txt >&2 || true
+            exit 1
+          fi
+          #[verify:begin]
+          # Verification gate (issue #10): single reflection pass + merge.
+          # Same step run block: the provider key binding stays exactly 1.
+          python3 verify_findings.py extract --body body.md --out findings.json
+          if [ -s findings.json ] && [ "$(python3 -c 'import json;print(len(json.load(open("findings.json"))))')" != "0" ]; then
+            # Pre-SHA check: skip the 2nd LLM call when the PR head moved.
+            CURRENT_SHA0="$(gh pr view "${{ github.event.pull_request.number }}" --json headRefOid --jq .headRefOid)"
+            if [ "$CURRENT_SHA0" != "$HEAD_SHA" ]; then
+              echo "PR head moved before reflection; skipping verification" >&2
+            else
+              cat instructions.reflection.md > reflection_input.txt
+              {
+                echo ""
+                echo "## Findings under verification"
+                cat findings.json
+                echo ""
+                echo "## Diff context (trimmed around citations)"
+                python3 verify_findings.py hunks --diff pr.diff --findings findings.json --out hunks.txt
+                cat hunks.txt
+              } >> reflection_input.txt
+              goose run --instructions reflection_input.txt > reflect_raw.txt
+              if python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out scores.json; then
+                python3 verify_findings.py merge --body body.md --scores scores.json \
+                  --profile __VERIFY_PROFILE__ --mode __VERIFY_MODE__ \
+                  --out-final body.md --out-dropped dropped.json \
+                  --lang "__LANGUAGE__"
+                if [ -s dropped.json ]; then
+                  echo "verification gate: $(python3 -c 'import json;d=json.load(open("dropped.json"));print(f"{d[\"kept\"]} kept / {d[\"demoted\"]} demoted / {d[\"dropped\"]} dropped")')" >> "$GITHUB_STEP_SUMMARY"
+                fi
+              else
+                # One corrective retry, then fail-open (D-2). The retry
+                # carries the ACTUAL parse failure reason so the model
+                # can correct the specific mistake (not a blind repeat).
+                printf '%s\n' \
+                  'Your previous reply could not be parsed. Output MUST be exactly:' \
+                  '## Reflection' \
+                  '```json' \
+                  '{"findings":[{"anchor":"<echo exactly>","score":<0-10>,"why":"<English>"}]}' \
+                  '```' \
+                  'No prose before or after the json block.' > correction.txt
+                { echo ""; echo "Parse failure reason:"; \
+                  python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out /dev/null 2>&1 || true; \
+                } >> correction.txt
+                cat correction.txt > reflection_retry.txt
+                cat reflection_input.txt >> reflection_retry.txt
+                goose run --instructions reflection_retry.txt > reflect_raw2.txt
+                if python3 verify_findings.py reflect-parse --raw reflect_raw2.txt --out scores.json; then
+                  python3 verify_findings.py merge --body body.md --scores scores.json \
+                    --profile __VERIFY_PROFILE__ --mode __VERIFY_MODE__ \
+                    --out-final body.md --out-dropped dropped.json \
+                    --lang "__LANGUAGE__"
+                  if [ -s dropped.json ]; then
+                    echo "verification gate: $(python3 -c 'import json;d=json.load(open("dropped.json"));print(f"{d[\"kept\"]} kept / {d[\"demoted\"]} demoted / {d[\"dropped\"]} dropped")')" >> "$GITHUB_STEP_SUMMARY"
+                  fi
+                else
+                  { python3 verify_findings.py banner --lang "__LANGUAGE__"; echo ""; } | cat - body.md > body_banner.md && mv body_banner.md body.md
+                fi
+              fi
+            fi
+          fi
+          #[verify:end]
+
+      - name: Post review to PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Split the machine-readable threads block from the summary and anchor
+          # every thread to the unified diff. Findings that cannot be anchored
+          # are demoted into a "Not anchored to the diff" recap in the summary.
+          # Guard against the PR head moving after pr.diff was gathered:
+          # posting against a stale commit mis-anchors inline comments.
+          CURRENT_SHA="$(gh pr view "${{ github.event.pull_request.number }}" \
+            --json headRefOid --jq .headRefOid)"
+          if [ "$CURRENT_SHA" != "$HEAD_SHA" ]; then
+            echo "PR head moved since this run started ($HEAD_SHA -> $CURRENT_SHA);" >&2
+            echo "a newer run is posting the fresh diff. Skipping inline review." >&2
+            exit 0
+          fi
+          python3 inline_threads.py prepare --body body.md --diff pr.diff \
+            --out-clean body_clean.md --out-threads threads.json
+          if [ ! -s body_clean.md ]; then
+            echo "review body is empty after removing the machine-readable threads block" >&2
+            exit 1
+          fi
+          # CodeRabbit-style posting: summary as the review body, validated
+          # findings as comments anchored to diff lines. The GITHUB_TOKEN cannot
+          # submit APPROVE events, so the review is always COMMENT.
+          if jq -e 'length > 0' threads.json >/dev/null 2>&1 && [ -n "$HEAD_SHA" ]; then
+            python3 inline_threads.py github-payload --body-clean body_clean.md \
+              --threads threads.json --commit-id "$HEAD_SHA" --out review_payload.json
+            if gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+                -X POST -H "Content-Type: application/json" \
+                --input review_payload.json > review_result.json 2> review_err.txt; then
+              echo "posted review with inline comments: $(jq -r '.comments | length' review_result.json 2>/dev/null || echo '?')" >&2
+            else
+              echo "WARN: inline review posting failed; falling back to a plain comment" >&2
+              cat review_err.txt >&2 || true
+              gh pr comment "${{ github.event.pull_request.number }}" --body-file body_clean.md
+            fi
+          else
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file body_clean.md
+          fi
+
+      - name: Upload verification gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-gate-${{ github.event.pull_request.number }}
+          path: |
+            findings.json
+            scores.json
+            dropped.json
+            body.md
+          if-no-files-found: ignore

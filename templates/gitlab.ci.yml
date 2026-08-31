@@ -1,0 +1,151 @@
+# Rendered by soolmuk/CodeGoose scripts/render.py - do not hand-edit.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+codegoose_review:
+  image: ubuntu:24.04
+  timeout: 25 minutes
+  variables:
+    GIT_DEPTH: "0"
+    GIT_STRATEGY: clone
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates python3 jq
+    - mkdir -p "$HOME/.local/bin"
+    - curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh
+        | GOOSE_VERSION=v1.48.0 CONFIGURE=false GOOSE_BIN_DIR="$HOME/.local/bin" bash
+    - export PATH="$HOME/.local/bin:$PATH"
+    - mkdir -p ~/.config/goose
+    - |
+      cat <<'EOF' > ~/.config/goose/config.yaml
+      GOOSE_PROVIDER: __PROVIDER__
+      GOOSE_MODEL: __GOOSE_MODEL__
+      keyring: false
+      EOF
+    - |
+      if [ -z "$GITLAB_REVIEW_TOKEN" ]; then
+        echo "GITLAB_REVIEW_TOKEN secret is not set" >&2
+        exit 1
+      fi
+    - |
+      {
+        echo "# Files Changed"
+        git diff --stat "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD"
+        echo ""
+        echo "# Changes Summary"
+        git diff "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" > pr.diff
+        cat pr.diff
+      } > changes.txt
+    - curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/__RECIPES_REF__/scripts/inline_threads.py -o inline_threads.py
+    - '[ -s inline_threads.py ] || { echo "Failed to download inline_threads.py helper" >&2; exit 1; }'
+    # Verification-gate helpers (issue #10): the whole region (downloads
+    # included) is removed when rendering with --verification off.
+    #[verify:begin]
+    - curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/__RECIPES_REF__/scripts/verify_findings.py -o verify_findings.py
+    - '[ -s verify_findings.py ] || { echo "Failed to download verify_findings.py helper" >&2; exit 1; }'
+    - curl -fsSL https://raw.githubusercontent.com/soolmuk/CodeGoose/__RECIPES_REF__/templates/instructions.reflection.md -o instructions.reflection.md
+    - '[ -s instructions.reflection.md ] || { echo "Failed to download reflection instructions" >&2; exit 1; }'
+    #[verify:end]
+    - |
+      cat <<'EOF' > instructions.txt
+      __INSTRUCTIONS__
+      EOF
+      cat changes.txt >> instructions.txt
+    - |
+      set -e
+      export __API_KEY_NAME__="$__API_KEY_NAME__"
+      goose run --instructions instructions.txt > raw.txt
+      python3 inline_threads.py extract --raw raw.txt --out body.md || true
+      if [ ! -s body.md ]; then
+        echo "goose produced no final review (no '## Summary' sentinel in output)" >&2
+        tail -n 40 raw.txt >&2 || true
+        exit 1
+      fi
+      #[verify:begin]
+      # Verification gate (issue #10): single reflection pass + merge in
+      # the SAME script block (the provider key export is NOT repeated).
+      python3 verify_findings.py extract --body body.md --out findings.json
+      if [ -s findings.json ] && [ "$(python3 -c 'import json;print(len(json.load(open("findings.json"))))')" != "0" ]; then
+        cat instructions.reflection.md > reflection_input.txt
+        {
+          echo ""
+          echo "## Findings under verification"
+          cat findings.json
+          echo ""
+          echo "## Diff context (trimmed around citations)"
+          python3 verify_findings.py hunks --diff pr.diff --findings findings.json --out hunks.txt
+          cat hunks.txt
+        } >> reflection_input.txt
+        goose run --instructions reflection_input.txt > reflect_raw.txt
+        if python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out scores.json; then
+          python3 verify_findings.py merge --body body.md --scores scores.json \
+            --profile __VERIFY_PROFILE__ --mode __VERIFY_MODE__ \
+            --out-final body.md --out-dropped dropped.json \
+            --lang "__LANGUAGE__"
+        else
+          # One corrective retry, then fail-open (D-2). The retry
+          # carries the ACTUAL parse failure reason so the model
+          # can correct the specific mistake (not a blind repeat).
+          printf '%s\n' \
+            'Your previous reply could not be parsed. Output MUST be exactly:' \
+            '## Reflection' \
+            '```json' \
+            '{"findings":[{"anchor":"<echo exactly>","score":<0-10>,"why":"<English>"}]}' \
+            '```' \
+            'No prose before or after the json block.' > correction.txt
+          { echo ""; echo "Parse failure reason:"; \
+            python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out /dev/null 2>&1 || true; \
+          } >> correction.txt
+          cat correction.txt > reflection_retry.txt
+          cat reflection_input.txt >> reflection_retry.txt
+          goose run --instructions reflection_retry.txt > reflect_raw2.txt
+          if python3 verify_findings.py reflect-parse --raw reflect_raw2.txt --out scores.json; then
+            python3 verify_findings.py merge --body body.md --scores scores.json \
+              --profile __VERIFY_PROFILE__ --mode __VERIFY_MODE__ \
+              --out-final body.md --out-dropped dropped.json \
+              --lang "__LANGUAGE__"
+          else
+            { python3 verify_findings.py banner --lang "__LANGUAGE__"; echo ""; } | cat - body.md > body_banner.md && mv body_banner.md body.md
+          fi
+        fi
+      fi
+      #[verify:end]
+    - |
+      set -e
+      python3 inline_threads.py prepare --body body.md --diff pr.diff \
+        --out-clean body_clean.md --out-threads threads.json
+      if [ ! -s body_clean.md ]; then
+        echo "review body is empty after removing threads block" >&2
+        exit 1
+      fi
+      BASE_SHA=$(git rev-parse "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
+      HEAD_SHA=$(git rev-parse HEAD)
+      START_SHA=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+      export BASE_SHA HEAD_SHA START_SHA
+      jq -Rs '{body: .}' body_clean.md > body.json
+      # Post the summary note first, then validated threads as diff discussions.
+      # Any single failed thread is skipped without failing the whole job.
+      curl -sf --request POST \
+        --header "PRIVATE-TOKEN: $GITLAB_REVIEW_TOKEN" \
+        --header "Content-Type: application/json" \
+        --data @body.json \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+      jq -c '.[]' threads.json > threads_flat.jsonl || true
+      while IFS= read -r t; do
+        P=$(jq -r '.path // empty' <<<"$t")
+        L=$(jq -r '.line // empty' <<<"$t")
+        B=$(jq -c '.body' <<<"$t")
+        [ -n "$P" ] && [ -n "$L" ] && [ -n "$B" ] || { echo "skip malformed thread" >&2; continue; }
+        jq -n --arg base "$BASE_SHA" --arg head "$HEAD_SHA" --arg start "$START_SHA" \
+              --arg new_path "$P" --arg new_line "$L" --argjson body "$B" \
+          '{body: $body,
+            position: {position_type: "text", base_sha: $base, head_sha: $head,
+                       start_sha: $start, new_path: $new_path,
+                       old_path: $new_path, new_line: ($new_line | tonumber)}}' > thread.json
+        curl -sS -f --request POST \
+          --header "PRIVATE-TOKEN: $GITLAB_REVIEW_TOKEN" \
+          --header "Content-Type: application/json" \
+          --data @thread.json \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/discussions" \
+          > /dev/null || echo "WARN: failed to post inline discussion for $P:$L" >&2
+      done < threads_flat.jsonl
