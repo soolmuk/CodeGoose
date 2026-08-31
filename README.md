@@ -44,75 +44,45 @@ Generated CI files are artifacts — do not hand-edit them. Improvements go into
 ## How it works
 
 <details open>
-<summary><strong>Review pipeline — runs in CI on every PR</strong></summary>
+<summary><strong>Review pipeline (runs in CI on every PR)</strong></summary>
 
 ```text
- pull request event
-         │
-         ▼
-  ⚙️  gather PR diff + metadata          (shell: gh pr diff / pr view)
-         │
-         ▼
-  ( O)>  1ST PASS — goose writes the graded review       [LLM call 1 of 2]
-         ([P0]–[nit] priority tags, file:line anchors)
-         │
-         ▼
-  ⚙️  extract — verify_findings.py → findings.json
-      (anchored findings only; the rest stays in prose, untouched)
-         │
-         ▼
-  ( O)>  REFLECTION PASS — goose re-checks every finding  [LLM call 2 of 2]
-         (0–10 validity score, falsification-framed prompt)
-    ↳ parse failure → 1 corrective retry → fail-open banner
-         │
-         ▼
-  ⚙️  merge gate — deterministic 2D matrix, no LLM
-      (keep / demote → [P2] / drop, verdict recomputed,
-       dropped findings → dropped.json artifact)
-         │
-         ▼
-  ⚙️  prepare — anchor every finding to diff lines
-      + 55,000-char clamp (UTF-8-safe)
-         │
-         ▼
-  🚀  post — inline comments + summary review
-      + "[Verified] N kept / M demoted / K dropped" stats line
+ PR event
+   │
+   ⚙️ gather diff + metadata          (gh pr diff / pr view)
+   ▼
+   ( O)> 1st pass — write the graded review        [LLM 1/2]
+   ▼
+   ⚙️ extract — verify_findings.py → findings.json (anchored findings only)
+   ▼
+   ( O)> reflection — re-check every finding       [LLM 2/2]
+   ▼
+   ⚙️ merge gate — deterministic 2D matrix, no LLM
+   ▼
+   ⚙️ prepare — anchor to diff lines + 55,000-char clamp
+   ▼
+   🚀 post — inline comments + summary review + verification stats
 ```
 
 </details>
 
 <details>
-<summary><strong>Setup pipeline — run once per repo via the recipe</strong></summary>
+<summary><strong>Setup pipeline (once per repo, via the recipe)</strong></summary>
 
 ```text
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│ ( O)> setup     │────▶│  scripts/render  │────▶│  CI config artifact │
-│  recipe         │     │  + templates/    │     │ (do not hand-edit)  │
-│  (goose driver) │     │ (deterministic)  │     │                     │
-└─────────────────┘     └──────────────────┘     └─────────────────────┘
-                                   │
-                                   ▼
-                        ⚙️ scripts/verify.py (PASS/FAIL)
+( O)> setup recipe (goose driver)
+   └─▶ ⚙️ render.py + templates/ ─▶ CI config artifact (do not hand-edit)
+                                    └─ ⚙️ scripts/verify.py PASS/FAIL
 ```
 
-- **Source of truth:** recipe YAML, `templates/`, `scripts/`, shared instructions
-- **Artifacts:** `.github/workflows/*`, `.gitlab-ci.yml`, Gitea/TeamCity configs, etc.
-- Artifact defects → fix templates/scripts in this repo, then **re-run the recipe**
-
-The recipe run itself is goose-driven `( O)>`, but every byte of the rendered
-CI config comes from `render.py` ⚙️ — the LLM never authors your workflow.
+Every byte of the rendered CI config comes from `render.py` ⚙️ — the LLM
+never authors your workflow.
 
 </details>
 
-> **Legend:** `( O)>` goose (LLM agent) steps · ⚙️ deterministic scripts · 🚀 CI posts to the forge.
->
-> **goose intervenes exactly twice per review** — the two `( O)>` steps above.
-> Everything between and after them is deterministic Python: the same
-> `findings.json` always yields the same merge decisions, independent of
-> model mood. The two LLM steps share exactly one provider key, one model,
-> one config.
-
-Official reference: [goose CI/CD tutorial](https://goose-docs.ai/docs/tutorials/cicd)
+> **Legend:** `( O)>` goose (LLM agent) · ⚙️ deterministic script · 🚀 CI posts to the forge.
+> goose intervenes exactly twice per review; everything in between is
+> deterministic Python. Reference: [goose CI/CD tutorial](https://goose-docs.ai/docs/tutorials/cicd)
 
 ---
 
@@ -120,13 +90,9 @@ Official reference: [goose CI/CD tutorial](https://goose-docs.ai/docs/tutorials/
 
 ### 1) Launch from goose Desktop
 
-> **One click → goose Desktop.** The badge opens a small GitHub Pages page
-> that immediately fires the official `goose://` deep link. (GitHub.com
-> strips custom URL schemes from rendered Markdown, so a raw `goose://`
-> link inside this README would be a dead link there.) If the auto-launch
-> is blocked, use the Launch button on that page or the fallback below.
-
-Click a badge — goose Desktop starts automatically:
+Click a badge to start goose Desktop. (The badge opens a GitHub Pages page
+that fires the `goose://` deep link — GitHub strips custom URL schemes from
+rendered Markdown. If blocked, use the manual fallback below.)
 
 <table>
 <tr>
@@ -134,25 +100,20 @@ Click a badge — goose Desktop starts automatically:
 
 [![PR Code Review — Launch In Desktop](assets/launch-pr-review.svg)](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)
 
-Grade a locally downloaded PR diff.
-
-**Flow:** Trust → enter `pr_directory` → read-only review
+Grade a locally downloaded PR diff. **Flow:** Trust → enter `pr_directory` → read-only review
 
 </td>
 <td width="50%" valign="top">
 
 [![CI Setup — Launch In Desktop](assets/launch-ci-setup.svg)](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)
 
-Install or refresh the CodeGoose review pipeline.
-
-**Flow:** pick platform · language · style · LLM · model → run the render pipeline
+Install or refresh the review pipeline. **Flow:** pick platform · language · style · LLM · model → render
 
 </td>
 </tr>
 </table>
 
-Deep Links use the official `goose://recipe?config=...` format.
-The first run shows a **Trust & Execute** prompt; you won't be asked again
+First run shows a **Trust & Execute** prompt; you won't be asked again
 unless the recipe changes.
 
 <details>
@@ -173,8 +134,7 @@ goose://recipe?config=eyJ2ZXJzaW9uIjoiMS4wLjAiLCJ0aXRsZSI6IkNvZGVHb29zZSBDSSBTZX
 
 </details>
 
-After editing a recipe, **regenerate** the deep links and update the launch
-page plus these fallback blocks:
+After editing a recipe, regenerate the deep links:
 
 ```bash
 goose recipe validate codegoose-review.yaml codegoose-setup.yaml
@@ -183,7 +143,7 @@ python3 scripts/update_deeplinks.py   # regenerates docs/launch.html
 
 ### 2) Reuse from the CLI
 
-Register this repo via [`GOOSE_RECIPE_GITHUB_REPO`](https://goose-docs.ai/docs/guides/recipes/storing-recipes).
+Register this repo via [`GOOSE_RECIPE_GITHUB_REPO`](https://goose-docs.ai/docs/guides/recipes/storing-recipes):
 
 ```bash
 # Authenticated with the gh CLI
@@ -192,7 +152,7 @@ goose recipe list
 goose run --recipe codegoose-review --params pr_directory=/tmp/pr
 ```
 
-In CI or remote runs you can also pass the URL directly:
+Or pass the URL directly:
 
 ```bash
 goose run --recipe "https://github.com/soolmuk/CodeGoose" \
@@ -202,8 +162,8 @@ goose run --recipe "https://github.com/soolmuk/CodeGoose" \
 
 ### 3) CI Setup options
 
-Everything is chosen via dropdowns at launch time; the recipe renders your
-platform's CI config deterministically from that choice.
+All options are dropdowns at launch time; the recipe renders your platform's
+CI config deterministically from that choice.
 
 | Parameter | Options | Notes |
 |---|---|---|
@@ -256,9 +216,9 @@ the same rendered review workflow on its own pull requests.
 
 ### Verification gate
 
-Code review models produce false positives. The CodeGoose CI pipeline adds a
-**single strengthening verification pass** after the first review — the same
-pattern as CodeRabbit's judge model and Qodo's reasoning re-check:
+Code review models produce false positives. After the first review, the
+pipeline runs a reflection pass (same pattern as CodeRabbit's judge model and
+Qodo's reasoning re-check):
 
 1. **First pass** — goose writes the graded review (`[P0]`…`[nit]` priority tags).
 2. **Reflection pass** — the same model, with a falsification-framed prompt
@@ -277,29 +237,18 @@ pattern as CodeRabbit's judge model and Qodo's reasoning re-check:
    (`dropped.json` / job summary) — the posted review states how many were
    excluded, so nothing is silently lost.
 
-**Modes** (`verification_gate` setup parameter):
+**Modes** (`verification_gate`):
 
-| Mode | Behavior | Cost |
-|---|---|---|
-| `on` | Gate enforced on the posted review | ≈ 2x LLM spend |
-| `shadow` | Gate runs, outcomes logged only; the original review is posted | ≈ 2x LLM spend |
-| `off` | No verification step | 1x |
-
-**Threshold guidance:** keep profiles at the defaults (conservative). Do not
-raise the keep threshold above 7-8 — benchmark data shows stricter gates
-destroy recall (only ~7% of true defects are found by multiple tools).
-
-If reflection output fails to parse twice, CI fails **open**: the original
-first-pass review is posted with a "⚠️ verification not applied" banner.
-
-Existing users: re-run the **CI Setup** recipe to re-render your config with
-the gate.
+`on` enforces the gate (≈2x LLM spend) · `shadow` logs outcomes only (≈2x) ·
+`off` skips it (1x). If reflection output fails to parse twice, CI fails
+**open** with a "⚠️ verification not applied" banner. Keep the default
+threshold profile (conservative) — stricter gates destroy recall.
 
 ---
 
 ## 🔐 Security & operational guarantees
 
-What the generated pipeline guarantees out of the box:
+Guarantees of the generated pipeline:
 
 | Guarantee | Mechanism |
 |---|---|
@@ -307,12 +256,11 @@ What the generated pipeline guarantees out of the box:
 | No truncated verdicts | Bodies clamped to 55,000 characters (UTF-8-safe); overflow is cut with a stated reason, never silently |
 | No silent success on empty output | Empty goose output fails the job explicitly, with a logged cause |
 | No runaway or duplicated runs | `concurrency` groups cancel per PR; `timeout-minutes` on every job |
-| Least-privilege tokens | `contents: read` + `pull-requests: write` only; exactly one provider API-key binding |
+| Least-privilege tokens | `contents: read` + `pull-requests: write` only; one provider API-key binding |
 | Read-only review agent | `codegoose-review` cannot build, test, or modify files — it reads the diff and the checked-out base branch |
 
-Findings that cannot be anchored to the diff are recapped in the summary
-comment instead of being mis-anchored inline — and if the PR head moves
-during a run, the run skips posting rather than review a stale commit.
+Un-anchorable findings go to the summary comment instead of being
+mis-anchored; if the PR head moves during a run, posting is skipped.
 
 ---
 
@@ -326,9 +274,8 @@ during a run, the run skips posting rather than review a stale commit.
   python3 scripts/update_deeplinks.py   # regenerate docs/launch.html + check README fallbacks
   ```
 
-- Deep-link payloads live in three rendered places: the launch page (`docs/launch.html`,
-  served by GitHub Pages) and the manual-fallback blocks in both READMEs.
-  `scripts/update_deeplinks.py --check` runs in CI to catch drift.
+- Deep-link payloads live in `docs/launch.html` and the fallback blocks in both
+  READMEs; `scripts/update_deeplinks.py --check` runs in CI to catch drift.
 
 - `codegoose-review` is **read-only** (no builds, tests, or file edits)
 - Do not hardcode project-specific instructions in the recipe; inject them with `--params instructions=`
@@ -340,32 +287,6 @@ during a run, the run skips posting rather than review a stale commit.
   - Exactly one provider API-key binding (preserve platform expressions as literals)
 
 Issues and pull requests welcome — PRs run this repo's own CodeGoose review.
-
-## 🏷️ Releases & versioning
-
-**The GitHub Release is the only distribution channel.**
-
-- `main` is the development branch: PRs land there freely, and its state is
-  **not** what consumers run.
-- Every consumer download — rendered workflows fetching helpers and
-  instructions, and the setup recipe fetching `render.py` / `verify.py` —
-  comes from a release asset:
-  `https://github.com/soolmuk/CodeGoose/releases/latest/download/<basename>`
-  (manifest: [`scripts/release_assets.txt`](scripts/release_assets.txt)).
-- A release is created only when its gate passes: the asset manifest is fully
-  satisfiable, helper selftests pass, all four platforms render + verify,
-  and both recipes validate (`.github/workflows/release.yml`).
-- Because consumers always resolve `releases/latest`, an installed workflow
-  automatically picks up new releases — no re-render needed. Defective
-  releases are fixed forward with a patch release; `latest` never points at
-  prereleases.
-- `GOOSE_RECIPE_GITHUB_REPO`-based reuse always tracks `main` instead of
-  releases (goose reads `origin/main` by design), so treat it as a
-  convenience channel without version guarantees; the supported channels are
-  deep links (self-contained) and release-pinned workflows.
-
-Changelog: [`CHANGELOG.md`](CHANGELOG.md) · Releases:
-<https://github.com/soolmuk/CodeGoose/releases>
 
 ## 📦 Layout
 

@@ -44,73 +44,45 @@
 ## 작동 방식
 
 <details open>
-<summary><strong>리뷰 파이프라인 — PR마다 CI에서 실행</strong></summary>
+<summary><strong>리뷰 파이프라인 (PR마다 CI에서 실행)</strong></summary>
 
 ```text
- pull request 이벤트
-         │
-         ▼
-  ⚙️  PR diff + 메타데이터 수집           (shell: gh pr diff / pr view)
-         │
-         ▼
-  ( O)>  1차 패스 — goose가 등급 리뷰 작성              [LLM 호출 1/2]
-         ([P0]–[nit] 우선순위 태그, file:line 인용)
-         │
-         ▼
-  ⚙️  extract — verify_findings.py → findings.json
-      (인용 있는 파인딩만; 나머지는 원문에 그대로 잔류)
-         │
-         ▼
-  ( O)>  리플렉션 패스 — goose가 모든 파인딩 재검증      [LLM 호출 2/2]
-         (0–10 타당도 점수, 반증 프레이밍 프롬프트)
-    ↳ 파싱 실패 → 교정 재시도 1회 → fail-open 배너
-         │
-         ▼
-  ⚙️  병합 게이트 — 결정론적 2D 매트릭스, LLM 없음
-      (유지 / 강등 → [P2] / 제외, Verdict 재계산,
-       제외된 파인딩 → dropped.json 아티팩트)
-         │
-         ▼
-  ⚙️  prepare — 모든 파인딩을 diff 라인에 앵커
-      + 55,000자 클램프 (UTF-8 안전)
-         │
-         ▼
-  🚀  게시 — 인라인 코멘트 + 요약 리뷰
-      + "[검증] N건 유지 / M건 강등 / K건 제외" 통계 라인
+ PR 이벤트
+   │
+   ⚙️ diff + 메타데이터 수집           (gh pr diff / pr view)
+   ▼
+   ( O)> 1차 패스 — 등급 리뷰 작성                  [LLM 1/2]
+   ▼
+   ⚙️ extract — verify_findings.py → findings.json (인용 있는 파인딩만)
+   ▼
+   ( O)> 리플렉션 — 모든 파인딩 재검증              [LLM 2/2]
+   ▼
+   ⚙️ 병합 게이트 — 결정론적 2D 매트릭스, LLM 없음
+   ▼
+   ⚙️ prepare — diff 라인 앵커 + 55,000자 클램프
+   ▼
+   🚀 게시 — 인라인 코멘트 + 요약 리뷰 + 검증 통계
 ```
 
 </details>
 
 <details>
-<summary><strong>셋업 파이프라인 — 저장소당 1회, 레시피로 실행</strong></summary>
+<summary><strong>셋업 파이프라인 (저장소당 1회, 레시피 실행)</strong></summary>
 
 ```text
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│ ( O)> setup     │────▶│  scripts/render  │────▶│  CI config artifact │
-│  recipe         │     │  + templates/    │     │ (do not hand-edit)  │
-│  (goose driver) │     │ (deterministic)  │     │                     │
-└─────────────────┘     └──────────────────┘     └─────────────────────┘
-                                   │
-                                   ▼
-                        ⚙️ scripts/verify.py (PASS/FAIL)
+( O)> 셋업 레시피 (goose 드라이버)
+   └─▶ ⚙️ render.py + templates/ ─▶ CI 설정 artifact (직접 수정 금지)
+                                    └─ ⚙️ scripts/verify.py PASS/FAIL
 ```
 
-- **진실 원천:** 레시피 YAML, `templates/`, `scripts/`, 공용 지시문
-- **산출물:** `.github/workflows/*`, `.gitlab-ci.yml`, Gitea/TeamCity 설정 등
-- 산출물 결함 → 이 저장소 템플릿/스크립트를 고치고 **레시피를 다시 실행**
-
-레시피 실행 자체는 goose 드라이버 `( O)>`가 맡지만, 렌더되는 CI 설정의 모든 바이트는
-`render.py` ⚙️가 씁니다 — LLM이 워크플로를 저술하지 않습니다.
+렌더되는 CI 설정의 모든 바이트는 `render.py` ⚙️가 씁니다 — LLM이 워크플로를
+저술하지 않습니다.
 
 </details>
 
-> **범례:** `( O)>` goose(LLM 에이전트) 개입 단계 · ⚙️ 결정론적 스크립트 · 🚀 CI가 forge에 게시.
->
-> **goose는 리뷰당 정확히 2번 개입** — 위의 두 `( O)>` 단계입니다. 그 사이와 뒤는
-> 전부 결정론적 Python이므로, 같은 `findings.json`은 모델 컨디션과 무관하게 항상
-> 같은 병합 결과를 냅니다. 두 LLM 단계는 정확히 하나의 provider 키·모델·config를 공유합니다.
-
-공식 참고: [goose CI/CD tutorial](https://goose-docs.ai/docs/tutorials/cicd)
+> **범례:** `( O)>` goose(LLM 에이전트) · ⚙️ 결정론적 스크립트 · 🚀 CI가 forge에 게시.
+> goose는 리뷰당 정확히 2번 개입하며, 그 사이는 전부 결정론적 Python입니다.
+> 참고: [goose CI/CD tutorial](https://goose-docs.ai/docs/tutorials/cicd)
 
 ---
 
@@ -118,13 +90,9 @@
 
 ### 1) goose Desktop에서 바로 실행
 
-> **클릭 1번이면 goose Desktop이 실행됩니다.** 배지를 누르면 GitHub Pages의
-> 작은 페이지가 열리고 즉시 공식 `goose://` 딥링크 실행을 시도합니다.
-> (GitHub.com은 렌더링 시 커스텀 URL 스킴을 제거하기 때문에, README 안에
-> `goose://` 링크를 직접 넣으면 그곳에서는 죽은 링크가 됩니다.) 자동 실행이
-> 차단되면 그 페이지의 Launch 버튼 또는 아래 수동 폴백을 사용하세요.
-
-배지를 클릭하면 goose Desktop 실행이 바로 시작됩니다:
+배지를 클릭하면 goose Desktop이 바로 실행됩니다. (배지는 GitHub Pages의
+런치 페이지를 열어 `goose://` 딥링크를 실행합니다 — GitHub은 렌더링 시
+커스텀 URL 스킴을 제거합니다. 차단되면 아래 수동 폴백을 사용하세요.)
 
 <table>
 <tr>
@@ -132,24 +100,19 @@
 
 [![PR 코드 리뷰 — Launch In Desktop](assets/launch-pr-review.svg)](https://soolmuk.github.io/CodeGoose/launch.html#pr-review)
 
-로컬에 받아 둔 PR diff를 등급 리뷰합니다.
-
-**흐름:** Trust → `pr_directory` 입력 → 읽기 전용 리뷰
+로컬에 받아 둔 PR diff를 등급 리뷰합니다. **흐름:** Trust → `pr_directory` 입력 → 읽기 전용 리뷰
 
 </td>
 <td width="50%" valign="top">
 
 [![CI 셋업 — Launch In Desktop](assets/launch-ci-setup.svg)](https://soolmuk.github.io/CodeGoose/launch.html#ci-setup)
 
-대상 저장소에 CodeGoose 리뷰 파이프라인을 깔거나 갱신합니다.
-
-**흐름:** 플랫폼 · 언어 · 스타일 · LLM · 모델 선택 → 렌더 파이프라인 실행
+리뷰 파이프라인을 깔거나 갱신합니다. **흐름:** 플랫폼 · 언어 · 스타일 · LLM · 모델 선택 → 렌더
 
 </td>
 </tr>
 </table>
 
-Deep Link는 공식 형식 `goose://recipe?config=...` 입니다.
 첫 실행 시 **Trust & Execute** 확인창이 뜨며, 레시피가 바뀌지 않으면 다시 묻지 않습니다.
 
 <details>
@@ -170,7 +133,7 @@ goose://recipe?config=eyJ2ZXJzaW9uIjoiMS4wLjAiLCJ0aXRsZSI6IkNvZGVHb29zZSBDSSBTZX
 
 </details>
 
-레시피를 고쳤다면 딥링크를 **다시 생성**해서 랜딩 페이지와 폴백 블록을 함께 갱신하세요:
+레시피를 고쳤다면 딥링크를 다시 생성하세요:
 
 ```bash
 goose recipe validate codegoose-review.yaml codegoose-setup.yaml
@@ -198,8 +161,8 @@ goose run --recipe "https://github.com/soolmuk/CodeGoose" \
 
 ### 3) CI 셋업 옵션
 
-모든 옵션은 실행 시점 드롭다운으로 고릅니다. 레시피는 그 선택값으로 플랫폼 CI
-설정을 결정론적으로 렌더링합니다.
+모든 옵션은 실행 시점 드롭다운으로 고르면, 레시피가 그 값으로 플랫폼 CI 설정을
+결정론적으로 렌더링합니다.
 
 | 파라미터 | 옵션 | 비고 |
 |---|---|---|
@@ -251,9 +214,8 @@ GitLab은 추가로 `GITLAB_REVIEW_TOKEN`(`api` 스코프 프로젝트 액세스
 
 ### 검증 게이트
 
-코드 리뷰 모델은 오탐을 만들어냅니다. CodeGoose CI는 1차 리뷰 뒤에
-**단일 강화 검증(리플렉션) 패스**를 추가합니다 — CodeRabbit의 judge 모델,
-Qodo의 추론 재검토와 같은 패턴입니다:
+코드 리뷰 모델은 오탐을 만들어냅니다. 1차 리뷰 뒤에 리플렉션 패스를
+추가합니다 — CodeRabbit의 judge 모델, Qodo의 추론 재검토와 같은 패턴입니다:
 
 1. **1차 패스** — goose가 등급 리뷰 작성 (`[P0]`~`[nit]` 우선순위 태그 포함).
 2. **리플렉션 패스** — 같은 모델이 반증 프레이밍 프롬프트(페르소나 분리 +
@@ -272,29 +234,17 @@ Qodo의 추론 재검토와 같은 패턴입니다:
    기록되고, 게시물에는 몇 건이 제외되었는지 명시됩니다 — **조용히 사라지는
    것은 없습니다**.
 
-**모드** (`verification_gate` 셋업 파라미터):
-
-| 모드 | 동작 | 비용 |
-|---|---|---|
-| `on` | 게시물에 게이트 적용 | LLM 지출 ≈ 2배 |
-| `shadow` | 게이트는 실행하되 기록만 남기고 원본 리뷰 게시 | ≈ 2배 |
-| `off` | 검증 단계 없음 | 1배 |
-
-**임계값 권고:** 프로필은 기본값(conservative)을 유지하세요. keep 임계를
-7-8 이상으로 올리지 마세요 — 벤치마크 상 더 엄격한 게이트는 재현율을
-붕괴시킵니다(진짜 결함의 ~7%만 여러 도구가 동시에 발견).
-
-리플렉션 출력이 2회 파싱에 실패하면 CI는 **fail-open**입니다: "⚠️ 검증
-미적용" 배너와 함께 원본 1차 리뷰를 게시합니다.
-
-기존 사용자: **CI 셋업** 레시피를 다시 실행하면 게이트가 포함된 설정으로
-재렌더됩니다.
+**모드** (`verification_gate`): `on` 게이트 적용(≈2배) · `shadow` 기록만
+남기고 원본 게시(≈2배) · `off` 검증 없음(1배). 리플렉션 출력이 2회 파싱에
+실패하면 "⚠️ 검증 미적용" 배너와 함께 원본을 게시합니다(**fail-open**).
+임계값 프로필은 기본값(conservative) 유지 권고 — 더 엄격한 게이트는
+재현율을 붕괴시킵니다.
 
 ---
 
 ## 🔐 보안·운영 보증
 
-생성되는 파이프라인이 기본으로 보증하는 것들:
+생성되는 파이프라인의 보증:
 
 | 보증 | 메커니즘 |
 |---|---|
@@ -305,8 +255,8 @@ Qodo의 추론 재검토와 같은 패턴입니다:
 | 최소 권한 토큰 | `contents: read` + `pull-requests: write`만 사용, provider API 키 바인딩은 정확히 1개 |
 | 읽기 전용 리뷰 에이전트 | `codegoose-review`는 빌드·테스트·파일 수정 불가 — diff와 체크아웃된 베이스 브랜치만 읽음 |
 
-diff에 앵커할 수 없는 파인딩은 인라인에 잘못 붙는 대신 요약 코멘트에 정리되고,
-실행 도중 PR head가 움직이면 오래된 커밋을 리뷰하지 않도록 게시를 건너뜁니다.
+앵커할 수 없는 파인딩은 요약 코멘트에 정리되고, 실행 도중 PR head가 움직이면
+게시를 건너뜁니다.
 
 ---
 
@@ -320,9 +270,8 @@ diff에 앵커할 수 없는 파인딩은 인라인에 잘못 붙는 대신 요�
   python3 scripts/update_deeplinks.py   # docs/launch.html 재생성 + README 폴백 검증
   ```
 
-- 딥링크 페이로드는 세 곳에 렌더링됩니다: 랜딩 페이지(`docs/launch.html`,
-  GitHub Pages 서빙)와 두 README의 수동 폴백 블록.
-  `scripts/update_deeplinks.py --check` 가 CI에서 드리프트를 잡아줍니다.
+- 딥링크 페이로드는 `docs/launch.html`과 두 README 폴백 블록에 렌더링됩니다.
+  `scripts/update_deeplinks.py --check`가 CI에서 드리프트를 잡습니다.
 
 - `codegoose-review`는 **읽기 전용** (빌드·테스트·파일 수정 금지)
 - 프로젝트 특화 지시는 레시피에 하드코딩하지 말고 `--params instructions=` 로 주입
