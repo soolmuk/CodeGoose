@@ -1,0 +1,23 @@
+# CodeGoose release asset manifest.
+#
+# One repo-relative path per line; blank lines and lines starting with '#'
+# are ignored. The basename of each path becomes the release-asset name
+# (basenames are unique across directories, so no renaming is needed).
+#
+# Consumers fetch these from:
+#   https://github.com/soolmuk/CodeGoose/releases/latest/download/<basename>
+#
+# This file is the single source of truth for what every release must
+# contain. Changing it is part of a release PR, never a post-tag fix:
+# the release workflow refuses to publish if a listed file is missing.
+scripts/render.py
+scripts/verify.py
+scripts/inline_threads.py
+scripts/verify_findings.py
+templates/github.workflow.yml
+templates/gitlab.ci.yml
+templates/gitea.workflow.yml
+templates/teamcity.settings.kts
+templates/instructions.graded.md
+templates/instructions.summary.md
+templates/instructions.reflection.md

@@ -1,0 +1,127 @@
+# CodeGoose release pipeline. v0.1.0 (issue: release-only consumption model).
+#
+# Model: main is the development tick; the GitHub Release is the ONLY
+# distribution channel. Every asset consumers download comes from
+#   https://github.com/soolmuk/CodeGoose/releases/latest/download/<basename>
+# so an installed workflow always tracks the latest release without ever
+# re-rendering.
+#
+# This workflow runs on tag push (v*). It refuses to publish a release
+# whose asset manifest (scripts/release_assets.txt) is not fully
+# satisfiable at the tagged commit. Asset names are the file basenames.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Release gate (assets present + selftests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          # The tag is already checked out; this ensures a pristine tree.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify every listed release asset exists
+        run: |
+          set -eu
+          missing=0
+          while IFS= read -r path; do
+            case "$path" in ''|'#'*) continue ;; esac
+            if [ ! -s "$path" ]; then
+              echo "FAIL: manifest lists '$path' but it is missing or empty at the tagged commit" >&2
+              missing=$((missing+1))
+            fi
+          done < scripts/release_assets.txt
+          if [ "$missing" -ne 0 ]; then
+            echo "Refusing to publish: asset manifest not satisfiable." >&2
+            exit 1
+          fi
+          echo "OK: all manifest assets present."
+
+      - name: Helper selftests (render contract depends on them)
+        run: |
+          set -eu
+          python3 scripts/inline_threads.py selftest
+          python3 scripts/verify_findings.py selftest
+
+      - name: Render + verify all four platforms (dry-run against local templates)
+        run: |
+          set -eu
+          for style in graded-review changes-summary; do
+            for verification in on off shadow; do
+              for platform in github gitlab gitea teamcity; do
+                echo "=== $platform / $style / $verification ==="
+                python3 scripts/render.py "$platform" \
+                  --local \
+                  --provider openai \
+                  --model gpt-4o \
+                  --style "$style" \
+                  --language English \
+                  --verification "$verification" \
+                  --verify-profile conservative \
+                  --dry-run > "/tmp/${platform}.rendered"
+                python3 scripts/verify.py "$platform" "/tmp/${platform}.rendered"
+              done
+            done
+          done
+
+      - name: Recipe validation (both recipes must stay valid)
+        run: |
+          set -eu
+          curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
+            | GOOSE_VERSION=v1.48.0 CONFIGURE=false GOOSE_BIN_DIR=/tmp/goose-bin bash
+          /tmp/goose-bin/goose recipe validate codegoose-setup.yaml
+          /tmp/goose-bin/goose recipe validate codegoose-review.yaml
+
+  publish:
+    name: Attach assets + create release
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create release and attach manifest assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          # Build the gh release create argument list from the manifest.
+          args=()
+          while IFS= read -r path; do
+            case "$path" in ''|'#'*) continue ;; esac
+            args+=("$path"#"$(basename "$path")")
+          done < scripts/release_assets.txt
+          if [ "${#args[@]}" -eq 0 ]; then
+            echo "FAIL: manifest parsed empty" >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "Release $TAG. Assets: see CHANGELOG.md; manifest: scripts/release_assets.txt. All consumer downloads use releases/latest/download/<basename>." \
+            --verify-tag \
+            "${args[@]}"

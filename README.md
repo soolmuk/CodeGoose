@@ -341,6 +341,32 @@ during a run, the run skips posting rather than review a stale commit.
 
 Issues and pull requests welcome — PRs run this repo's own CodeGoose review.
 
+## 🏷️ Releases & versioning
+
+**The GitHub Release is the only distribution channel.**
+
+- `main` is the development branch: PRs land there freely, and its state is
+  **not** what consumers run.
+- Every consumer download — rendered workflows fetching helpers and
+  instructions, and the setup recipe fetching `render.py` / `verify.py` —
+  comes from a release asset:
+  `https://github.com/soolmuk/CodeGoose/releases/latest/download/<basename>`
+  (manifest: [`scripts/release_assets.txt`](scripts/release_assets.txt)).
+- A release is created only when its gate passes: the asset manifest is fully
+  satisfiable, helper selftests pass, all four platforms render + verify,
+  and both recipes validate (`.github/workflows/release.yml`).
+- Because consumers always resolve `releases/latest`, an installed workflow
+  automatically picks up new releases — no re-render needed. Defective
+  releases are fixed forward with a patch release; `latest` never points at
+  prereleases.
+- `GOOSE_RECIPE_GITHUB_REPO`-based reuse always tracks `main` instead of
+  releases (goose reads `origin/main` by design), so treat it as a
+  convenience channel without version guarantees; the supported channels are
+  deep links (self-contained) and release-pinned workflows.
+
+Changelog: [`CHANGELOG.md`](CHANGELOG.md) · Releases:
+<https://github.com/soolmuk/CodeGoose/releases>
+
 ## 📦 Layout
 
 | Path | Role |
