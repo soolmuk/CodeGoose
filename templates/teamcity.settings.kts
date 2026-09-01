@@ -46,9 +46,14 @@ object CodeGooseReview : BuildType({
                 set -e
                 # Shared helpers: downloaded from the LATEST CodeGoose
                 # release (release-only distribution; installed workflows
-                # track releases automatically, main is never fetched).
+                # track releases automatically, main is never fetched) and
+                # verified against the release's SHA256SUMS manifest — a
+                # swapped/compromised asset must fail the build, not execute.
+                curl -fsSL __RECIPES_BASE__/SHA256SUMS -o SHA256SUMS
+                [ -s SHA256SUMS ] || { echo "Failed to download SHA256SUMS manifest" >&2; exit 1; }
                 curl -fsSL __RECIPES_BASE__/inline_threads.py -o inline_threads.py
                 [ -s inline_threads.py ] || { echo "Failed to download inline_threads.py helper" >&2; exit 1; }
+                sha256sum --strict --check --ignore-missing SHA256SUMS
                 #[verify:begin]
                 # Verification-gate helpers (issue #10): downloaded in all modes.
                 curl -fsSL __RECIPES_BASE__/verify_findings.py -o verify_findings.py
@@ -69,6 +74,7 @@ object CodeGooseReview : BuildType({
                 # install uses the latest reviewed instructions.
                 curl -fsSL __RECIPES_BASE__/__STYLE_ASSET__ -o instructions.template.md
                 [ -s instructions.template.md ] || { echo "Failed to download review instructions" >&2; exit 1; }
+                sha256sum --strict --check --ignore-missing SHA256SUMS
                 python3 inline_threads.py lang --instruction-file instructions.template.md --language "__LANGUAGE__" --out instructions.txt
                 cat changes.txt >> instructions.txt
                 export __API_KEY_NAME__="${'$'}__API_KEY_NAME__"

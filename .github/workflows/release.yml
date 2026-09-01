@@ -97,6 +97,37 @@ jobs:
             done
           done
 
+      - name: Build the release checksum manifest (SHA256SUMS)
+        run: |
+          set -eu
+          # One SHA-256 line per release asset, in manifest order, keyed by
+          # the asset BASENAME — the name consumers download and verify in
+          # their own working dir (a repo-relative path would never match
+          # there; --ignore-missing would silently skip everything).
+          : > SHA256SUMS
+          while IFS= read -r path || [ -n "$path" ]; do
+            case "$path" in ''|'#'*) continue ;; esac
+            sha256sum "$path" | awk -v base="$(basename "$path")" '{print $1 "  " base}' >> SHA256SUMS
+          done < scripts/release_assets.txt
+          wc -l SHA256SUMS
+          # Sanity: every line must name a manifest asset basename.
+          while IFS= read -r line || [ -n "$line" ]; do
+            name="${line##*  }"
+            case "$name" in SHA256SUMS) continue ;; esac
+            grep -q "/$name$" scripts/release_assets.txt || {
+              echo "FAIL: SHA256SUMS lists '$name' which is not a manifest asset" >&2
+              exit 1
+            }
+          done < SHA256SUMS
+          # Self-verify against THIS tagged tree: the digests were computed
+          # from these exact files, so map each basename back to its
+          # repo-relative manifest path and check them.
+          while IFS= read -r path || [ -n "$path" ]; do
+            case "$path" in ''|'#'*) continue ;; esac
+            grep "  $(basename "$path")$" SHA256SUMS | awk -v p="$path" '{print $1 "  " p}'
+          done < scripts/release_assets.txt > /tmp/SHA256SUMS.paths
+          sha256sum --strict --check /tmp/SHA256SUMS.paths
+
       - name: Recipe validation (both recipes must stay valid)
         run: |
           set -eu
@@ -132,8 +163,22 @@ jobs:
             echo "FAIL: manifest parsed empty" >&2
             exit 1
           fi
+          # Checksum manifest (same computation as the gate job): lets any
+          # consumer verify downloaded release assets against this release.
+          : > SHA256SUMS
+          while IFS= read -r path || [ -n "$path" ]; do
+            case "$path" in ''|'#'*) continue ;; esac
+            sha256sum "$path" | awk -v base="$(basename "$path")" '{print $1 "  " base}' >> SHA256SUMS
+          done < scripts/release_assets.txt
+          # Self-verify against the tagged tree before attaching.
+          while IFS= read -r path || [ -n "$path" ]; do
+            case "$path" in ''|'#'*) continue ;; esac
+            grep "  $(basename "$path")$" SHA256SUMS | awk -v p="$path" '{print $1 "  " p}'
+          done < scripts/release_assets.txt > /tmp/SHA256SUMS.paths
+          sha256sum --strict --check /tmp/SHA256SUMS.paths
           gh release create "$TAG" \
             --title "$TAG" \
-            --notes "Release $TAG. Assets: see CHANGELOG.md; manifest: scripts/release_assets.txt. All consumer downloads use releases/latest/download/<basename>." \
+            --notes "Release $TAG. Assets: see CHANGELOG.md; manifest: scripts/release_assets.txt. All consumer downloads use releases/latest/download/<basename>. Asset checksums: SHA256SUMS." \
             --verify-tag \
-            "${args[@]}"
+            "${args[@]}" \
+            "SHA256SUMS#SHA256SUMS"

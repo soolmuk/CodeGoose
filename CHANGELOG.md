@@ -5,6 +5,36 @@ Notable changes to CodeGoose are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- **Credential hygiene + release-asset integrity (v6 contract)** — follow-ups
+  from the CodeRabbit/CodeGoose review of kai-cameo-mcp PR #105:
+  - `persist-credentials: false` on the checkout step (github + gitea
+    templates): the goose review step runs an LLM with shell access over
+    attacker-controlled diff content, and a persisted job token in
+    `.git/config` is a prompt-injection exfiltration path. No step relies on
+    persisted git credentials (`gh` calls pass `GH_TOKEN`/`REVIEW_TOKEN` in
+    env explicitly; the github goose step is deliberately token-free).
+  - **Release-asset checksum verification (all four platform templates)**:
+    the release pipeline now builds a `SHA256SUMS` manifest in the gate job
+    (every manifest asset, verified with `sha256sum --strict --check` before
+    publishing) and attaches it to the release; rendered workflows download
+    `SHA256SUMS` from the same release base and verify each fetched
+    helper/instruction asset with
+    `sha256sum --strict --check --ignore-missing` before use. This closes the
+    self-declared integrity gap (the workflow pins actions and the installer
+    but previously executed its own release assets unverified). Consumers
+    gain integrity once they re-render; existing rendered files keep working
+    (same assets, verification added on re-render).
+- **Least privilege**: the github template no longer requests
+  `actions: write` — `upload-artifact` v4 uses the runner's
+  `ACTIONS_RUNTIME_TOKEN` (verified in actions/toolkit source), not
+  `GITHUB_TOKEN`; the artifact upload needs no `actions` scope.
+- `scripts/verify.py` **v6 contract**: renders FAIL when checkout persists
+  credentials, when a template fetches release assets without checksum
+  verification, or when the github workflow requests `actions: write`.
+
 ## [0.3.0] - 2026-09-01
 
 ### Fixed

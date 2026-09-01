@@ -5,6 +5,15 @@ Usage:
   python3 verify.py <platform> <config-file>
 platform: github | gitlab | gitea | teamcity
 
+  v6 contract (credential hygiene + asset integrity, on top of v5):
+  - GitHub/Gitea templates must set persist-credentials: false on the
+    checkout step: the goose review step runs an LLM with shell access
+    over attacker-controlled diff content, and a persisted job token in
+    .git/config is a prompt-injection exfiltration path.
+  - Every template must download the release SHA256SUMS manifest and
+    verify each fetched helper/instruction asset with
+    `sha256sum --strict --check --ignore-missing` before use — a swapped
+    release asset must fail the job, not execute.
   v5 contract (supply-chain hardening, on top of v4):
   - the goose installer must be downloaded from a PINNED release tag (never
     the moving `stable` tag), saved to a file, verified against a SHA-256
@@ -181,6 +190,23 @@ def common_supply_chain_checks(t, errs):
         errs.append("installer digest literal missing")
 
 
+def common_credential_checks(t, errs):
+    """v6 contract: no persisted checkout credentials; verified assets."""
+    if "actions/checkout@" in t and "persist-credentials: false" not in t:
+        errs.append(
+            "checkout must set persist-credentials: false (the goose step "
+            "runs an LLM with shell access over attacker-controlled diff "
+            "content; a persisted job token in .git/config is an "
+            "exfiltration path)")
+    if "sha256sum --strict --check --ignore-missing SHA256SUMS" not in t:
+        errs.append(
+            "downloaded release assets must be verified against the release "
+            "SHA256SUMS manifest (sha256sum --strict --check "
+            "--ignore-missing SHA256SUMS)")
+    if "SHA256SUMS -o SHA256SUMS" not in t:
+        errs.append("template must download the SHA256SUMS manifest asset")
+
+
 def common_release_checks(t, errs):
     """v4 contract: consumers fetch release assets only, never git refs."""
     if LEGACY_RAW_MARK in t:
@@ -247,8 +273,12 @@ def check_github(t):
         errs.append("review must be pinned to the PR head sha")
     if "actions/upload-artifact" not in t:
         errs.append("github workflow must upload the verification-gate artifacts")
-    if "actions: write" not in t:
-        errs.append("github workflow needs actions: write to upload artifacts")
+    if "actions: write" in t:
+        errs.append(
+            "github workflow must NOT request actions: write (least "
+            "privilege): upload-artifact v4 uses the runner's "
+            "ACTIONS_RUNTIME_TOKEN, not GITHUB_TOKEN — no action scope "
+            "is needed")
     if "actions/checkout@" in t and "actions/checkout@11d5960a326750d5838078e36cf38b85af677262" not in t:
         errs.append("actions/checkout must be pinned to a full commit SHA")
     if "actions/upload-artifact@" in t and "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" not in t:
@@ -256,6 +286,7 @@ def check_github(t):
     common_verify_checks(t, errs)
     common_release_checks(t, errs)
     common_supply_chain_checks(t, errs)
+    common_credential_checks(t, errs)
     # Echo-leak defense (v5): the review body is posted to a public PR
     # thread; the provider key must be scrubbed from artifacts BEFORE the
     # posting step, and the key must never appear as a command argument.
@@ -315,6 +346,9 @@ def check_gitlab(t):
     if "pr.diff" not in t:
         errs.append("pr.diff must be produced for anchor validation")
     common_verify_checks(t, errs)
+    common_release_checks(t, errs)
+    common_supply_chain_checks(t, errs)
+    common_credential_checks(t, errs)
     for ph in PLACEHOLDERS:
         if ph in t:
             errs.append(f"unsubstituted placeholder: {ph}")
@@ -356,6 +390,7 @@ def check_gitea(t):
     if "actions/checkout@" in t and "actions/checkout@11d5960a326750d5838078e36cf38b85af677262" not in t:
         errs.append("actions/checkout must be pinned to a full commit SHA")
     common_supply_chain_checks(t, errs)
+    common_credential_checks(t, errs)
     for ph in PLACEHOLDERS:
         if ph in t:
             errs.append(f"unsubstituted placeholder: {ph}")
@@ -381,6 +416,7 @@ def check_teamcity(t):
     common_verify_checks(t, errs)
     common_release_checks(t, errs)
     common_supply_chain_checks(t, errs)
+    common_credential_checks(t, errs)
     if "executionTimeout" not in t:
         errs.append("TeamCity build must set executionTimeout")
     for ph in PLACEHOLDERS:

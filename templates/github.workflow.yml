@@ -8,7 +8,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  actions: write
   # gh pr view queries the GraphQL statusCheckRollup (commit checks); on
   # private repos the job token cannot read it without these scopes and
   # the gather step fails (found via kai-cameo-mcp #105, restored at the
@@ -33,6 +32,12 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
+          # The goose review step runs an LLM with shell access over
+          # attacker-controlled PR diff content; a prompt injection must
+          # not find the job token in .git/config. No step below relies
+          # on persisted git credentials (gh calls pass GH_TOKEN
+          # explicitly; the goose step is deliberately token-free).
+          persist-credentials: false
 
       - name: Install goose CLI
         env:
@@ -74,9 +79,14 @@ jobs:
           } > changes.txt
           # Shared helpers: downloaded from the LATEST CodeGoose release
           # (release-only distribution model; installed workflows track
-          # releases automatically, main is never fetched).
+          # releases automatically, main is never fetched). Every asset is
+          # verified against the release's SHA256SUMS manifest before use —
+          # a swapped/compromised asset must fail the job, not execute.
+          curl -fsSL __RECIPES_BASE__/SHA256SUMS -o SHA256SUMS
+          [ -s SHA256SUMS ] || { echo "Failed to download SHA256SUMS manifest" >&2; exit 1; }
           curl -fsSL __RECIPES_BASE__/inline_threads.py -o inline_threads.py
           [ -s inline_threads.py ] || { echo "Failed to download inline_threads.py helper" >&2; exit 1; }
+          sha256sum --strict --check --ignore-missing SHA256SUMS
           #[verify:begin]
           # Verification-gate helpers (issue #10): downloaded even when the
           # gate runs; the whole region (downloads included) is removed
@@ -96,6 +106,7 @@ jobs:
           # substitutes __LANGUAGE__ and fails on leftover tokens.
           curl -fsSL __RECIPES_BASE__/__STYLE_ASSET__ -o instructions.template.md
           [ -s instructions.template.md ] || { echo "Failed to download review instructions" >&2; exit 1; }
+          sha256sum --strict --check --ignore-missing SHA256SUMS
           python3 inline_threads.py lang \
             --instruction-file instructions.template.md \
             --language "__LANGUAGE__" \
