@@ -134,17 +134,13 @@ jobs:
             exit 1
           fi
           #[verify:begin]
-          # Verification gate (issue #10): single reflection pass + merge.
-          # Same step run block: the provider key binding stays exactly 1.
-          python3 verify_findings.py extract --body body.md --out findings.json
-          if [ -s findings.json ] && [ "$(python3 -c 'import json;print(len(json.load(open("findings.json"))))')" != "0" ]; then
-            # Pre-SHA check: skip the 2nd LLM call when the PR head moved.
-            # Reads the event payload file instead of `gh pr view` so this
-            # step needs no GH_TOKEN at all (secret isolation above).
-            CURRENT_SHA0="$(python3 -c 'import json,os;print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["pull_request"]["head"]["sha"])')"
-            if [ "$CURRENT_SHA0" != "$HEAD_SHA" ]; then
-              echo "PR head moved before reflection; skipping verification" >&2
-            else
+            # Verification gate (issue #10): single reflection pass + merge.
+            # Same step run block: the provider key binding stays exactly 1.
+            # (The old "skip when the PR head moved" pre-check read the same
+            #  event payload twice — head.sha vs head.sha — so it never fired;
+            #  the posting step's live `gh pr view` check is the real guard.)
+            python3 verify_findings.py extract --body body.md --out findings.json
+            if [ -s findings.json ] && [ "$(python3 -c 'import json;print(len(json.load(open("findings.json"))))')" != "0" ]; then
               cat instructions.reflection.md > reflection_input.txt
               {
                 echo ""
@@ -194,7 +190,6 @@ jobs:
                 fi
               fi
             fi
-          fi
           #[verify:end]
 
       - name: Redact provider key from review output

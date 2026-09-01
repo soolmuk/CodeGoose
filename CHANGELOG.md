@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- github template: removed the dead "PR head moved" pre-SHA check from the
+  verification gate (CodeGoose review, kai-cameo-mcp PR #105). It compared
+  `HEAD_SHA` with the head sha re-read from the SAME event payload
+  (`GITHUB_EVENT_PATH`), so the comparison was always equal and the guard
+  never fired. The posting step's live `gh pr view` staleness check is the
+  real guard and stays. The gitea template's equivalent pre-check queries
+  the live API and is kept.
+
 ### Security
 - **Credential hygiene + release-asset integrity (v6 contract)** — follow-ups
   from the CodeRabbit/CodeGoose review of kai-cameo-mcp PR #105:
