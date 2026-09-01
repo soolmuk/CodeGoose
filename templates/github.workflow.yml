@@ -134,25 +134,50 @@ jobs:
             exit 1
           fi
           #[verify:begin]
-            # Verification gate (issue #10): single reflection pass + merge.
-            # Same step run block: the provider key binding stays exactly 1.
-            # (The old "skip when the PR head moved" pre-check read the same
-            #  event payload twice — head.sha vs head.sha — so it never fired;
-            #  the posting step's live `gh pr view` check is the real guard.)
-            python3 verify_findings.py extract --body body.md --out findings.json
-            if [ -s findings.json ] && [ "$(python3 -c 'import json;print(len(json.load(open("findings.json"))))')" != "0" ]; then
-              cat instructions.reflection.md > reflection_input.txt
-              {
-                echo ""
-                echo "## Findings under verification"
-                cat findings.json
-                echo ""
-                echo "## Diff context (trimmed around citations)"
-                python3 verify_findings.py hunks --diff pr.diff --findings findings.json --out hunks.txt
-                cat hunks.txt
-              } >> reflection_input.txt
-              goose run --instructions reflection_input.txt > reflect_raw.txt
-              if python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out scores.json; then
+          # Verification gate (issue #10): single reflection pass + merge.
+          # Same step run block: the provider key binding stays exactly 1.
+          # (The old "skip when the PR head moved" pre-check read the same
+          #  event payload twice — head.sha vs head.sha — so it never fired;
+          #  the posting step's live `gh pr view` check is the real guard.)
+          python3 verify_findings.py extract --body body.md --out findings.json
+          if [ -s findings.json ] && [ "$(python3 -c 'import json;print(len(json.load(open("findings.json"))))')" != "0" ]; then
+            cat instructions.reflection.md > reflection_input.txt
+            {
+              echo ""
+              echo "## Findings under verification"
+              cat findings.json
+              echo ""
+              echo "## Diff context (trimmed around citations)"
+              python3 verify_findings.py hunks --diff pr.diff --findings findings.json --out hunks.txt
+              cat hunks.txt
+            } >> reflection_input.txt
+            goose run --instructions reflection_input.txt > reflect_raw.txt
+            if python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out scores.json; then
+              python3 verify_findings.py merge --body body.md --scores scores.json \
+                --profile __VERIFY_PROFILE__ --mode __VERIFY_MODE__ \
+                --out-final body.md --out-dropped dropped.json \
+                --lang "__LANGUAGE__"
+              if [ -s dropped.json ]; then
+                echo "verification gate: $(python3 -c 'import json;d=json.load(open("dropped.json"));print(f"{d[\"kept\"]} kept / {d[\"demoted\"]} demoted / {d[\"dropped\"]} dropped")')" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            else
+              # One corrective retry, then fail-open (D-2). The retry
+              # carries the ACTUAL parse failure reason so the model
+              # can correct the specific mistake (not a blind repeat).
+              printf '%s\n' \
+                'Your previous reply could not be parsed. Output MUST be exactly:' \
+                '## Reflection' \
+                '```json' \
+                '{"findings":[{"anchor":"<echo exactly>","score":<0-10>,"why":"<English>"}]}' \
+                '```' \
+                'No prose before or after the json block.' > correction.txt
+              { echo ""; echo "Parse failure reason:"; \
+                python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out /dev/null 2>&1 || true; \
+              } >> correction.txt
+              cat correction.txt > reflection_retry.txt
+              cat reflection_input.txt >> reflection_retry.txt
+              goose run --instructions reflection_retry.txt > reflect_raw2.txt
+              if python3 verify_findings.py reflect-parse --raw reflect_raw2.txt --out scores.json; then
                 python3 verify_findings.py merge --body body.md --scores scores.json \
                   --profile __VERIFY_PROFILE__ --mode __VERIFY_MODE__ \
                   --out-final body.md --out-dropped dropped.json \
@@ -161,35 +186,10 @@ jobs:
                   echo "verification gate: $(python3 -c 'import json;d=json.load(open("dropped.json"));print(f"{d[\"kept\"]} kept / {d[\"demoted\"]} demoted / {d[\"dropped\"]} dropped")')" >> "$GITHUB_STEP_SUMMARY"
                 fi
               else
-                # One corrective retry, then fail-open (D-2). The retry
-                # carries the ACTUAL parse failure reason so the model
-                # can correct the specific mistake (not a blind repeat).
-                printf '%s\n' \
-                  'Your previous reply could not be parsed. Output MUST be exactly:' \
-                  '## Reflection' \
-                  '```json' \
-                  '{"findings":[{"anchor":"<echo exactly>","score":<0-10>,"why":"<English>"}]}' \
-                  '```' \
-                  'No prose before or after the json block.' > correction.txt
-                { echo ""; echo "Parse failure reason:"; \
-                  python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out /dev/null 2>&1 || true; \
-                } >> correction.txt
-                cat correction.txt > reflection_retry.txt
-                cat reflection_input.txt >> reflection_retry.txt
-                goose run --instructions reflection_retry.txt > reflect_raw2.txt
-                if python3 verify_findings.py reflect-parse --raw reflect_raw2.txt --out scores.json; then
-                  python3 verify_findings.py merge --body body.md --scores scores.json \
-                    --profile __VERIFY_PROFILE__ --mode __VERIFY_MODE__ \
-                    --out-final body.md --out-dropped dropped.json \
-                    --lang "__LANGUAGE__"
-                  if [ -s dropped.json ]; then
-                    echo "verification gate: $(python3 -c 'import json;d=json.load(open("dropped.json"));print(f"{d[\"kept\"]} kept / {d[\"demoted\"]} demoted / {d[\"dropped\"]} dropped")')" >> "$GITHUB_STEP_SUMMARY"
-                  fi
-                else
-                  { python3 verify_findings.py banner --lang "__LANGUAGE__"; echo ""; } | cat - body.md > body_banner.md && mv body_banner.md body.md
-                fi
+                { python3 verify_findings.py banner --lang "__LANGUAGE__"; echo ""; } | cat - body.md > body_banner.md && mv body_banner.md body.md
               fi
             fi
+          fi
           #[verify:end]
 
       - name: Redact provider key from review output
