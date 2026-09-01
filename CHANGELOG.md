@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- github template: **provider-key echo-leak redaction** — a hostile PR diff
+  could prompt-inject the model step into repeating the provider API key
+  into the review body, which is posted to the (public) PR thread. A new
+  redaction step now scrubs the literal key from every review artifact
+  BEFORE posting (the key never appears as a command argument or in step
+  logs), and the job fails if the key survives in body.md. verify.py allows
+  the second key binding only inside the redaction step and fails renders
+  that post without redacting.
 - github template: the workflow now requests `checks: read` and
   `statuses: read` — `gh pr view` in the gather step queries the GraphQL
   `statusCheckRollup` and the job token cannot read it on private repos

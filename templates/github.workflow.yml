@@ -186,6 +186,34 @@ jobs:
           fi
           #[verify:end]
 
+      - name: Redact provider key from review output
+        # Defense against prompt-injection echo: the model step receives the
+        # provider API key, and a hostile PR diff could try to make the model
+        # repeat it into the review body — which is posted to the PR thread.
+        # The key never appears as a command argument or step-log line: it is
+        # exported by the runner (not echoed), read via a python script that
+        # only reports counts, and every review artifact is scrubbed before
+        # anything is posted or uploaded.
+        env:
+          __API_KEY_NAME__: ${{ secrets.__API_KEY_NAME__ }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          key = os.environ.get("__API_KEY_NAME__", "")
+          if key:
+              for name in ("body.md", "raw.txt", "reflect_raw.txt", "reflect_raw2.txt"):
+                  f = pathlib.Path(name)
+                  if f.exists():
+                      text = f.read_text(errors="replace")
+                      if key in text:
+                          f.write_text(text.replace(key, "[REDACTED_API_KEY]"))
+              body = pathlib.Path("body.md")
+              if body.exists() and key in body.read_text(errors="replace"):
+                  print("FATAL: provider API key still present in body.md after redaction", file=os.sys.stderr)
+                  raise SystemExit(1)
+          print("redaction pass complete")
+          PY
+
       - name: Post review to PR
         env:
           GH_TOKEN: ${{ github.token }}

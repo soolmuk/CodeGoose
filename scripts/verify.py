@@ -221,8 +221,14 @@ def check_github(t):
             errs.append(f"missing {scope}:read (gh pr view needs the "
                         "statusCheckRollup on private repos)")
     key_refs = sum(t.count(f"secrets.{k}") for k in PROVIDER_KEYS)
-    if key_refs != 1:
-        errs.append(f"expected exactly 1 secrets.*_API_KEY binding, found {key_refs}")
+    if key_refs not in (1, 2):
+        errs.append(
+            f"expected 1 (model) or 2 (model + redaction) secrets.*_API_KEY "
+            f"bindings, found {key_refs}")
+    if key_refs == 2 and "Redact provider key from review output" not in t:
+        errs.append(
+            "a second provider key binding is only allowed in the "
+            "redaction step")
     if "gh pr comment" not in t:
         errs.append("must post via gh pr comment")
     if "inline_threads.py extract --raw" not in t \
@@ -250,6 +256,15 @@ def check_github(t):
     common_verify_checks(t, errs)
     common_release_checks(t, errs)
     common_supply_chain_checks(t, errs)
+    # Echo-leak defense (v5): the review body is posted to a public PR
+    # thread; the provider key must be scrubbed from artifacts BEFORE the
+    # posting step, and the key must never appear as a command argument.
+    redact_idx = t.find("- name: Redact provider key from review output")
+    post_idx = t.find("- name: Post review to PR")
+    if redact_idx < 0 or post_idx < redact_idx:
+        errs.append("missing a provider-key redaction step BEFORE posting")
+    elif "sed -i" in t[redact_idx:post_idx] or "grep -F" in t[redact_idx:post_idx]:
+        errs.append("redaction must not pass the key as a command argument")
     # Secret isolation (v5): the goose step runs an LLM over attacker-
     # controlled diff content and must not bind GH_TOKEN. The run block
     # between "Run goose" and "Post review to PR" must be token-free.
