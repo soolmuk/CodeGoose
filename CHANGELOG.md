@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- github template: the workflow now requests `checks: read` and
+  `statuses: read` — `gh pr view` in the gather step queries the GraphQL
+  `statusCheckRollup` and the job token cannot read it on private repos
+  without those scopes (the gather step failed). Previously these scopes
+  were hand-patched into a consumer's rendered file (lost on the next
+  render); they now live in the template and verify.py enforces them.
+
 ### Security
 - **Supply-chain hardening (all four platform templates)** — found by
   CodeGoose/CodeRabbit review on kai-cameo-mcp PR #105:

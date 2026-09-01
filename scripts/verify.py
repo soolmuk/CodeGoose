@@ -216,6 +216,10 @@ def check_github(t):
         errs.append("missing concurrency group")
     if d.get("permissions", {}).get("pull-requests") != "write":
         errs.append("missing pull-requests:write")
+    for scope in ("checks", "statuses"):
+        if d.get("permissions", {}).get(scope) != "read":
+            errs.append(f"missing {scope}:read (gh pr view needs the "
+                        "statusCheckRollup on private repos)")
     key_refs = sum(t.count(f"secrets.{k}") for k in PROVIDER_KEYS)
     if key_refs != 1:
         errs.append(f"expected exactly 1 secrets.*_API_KEY binding, found {key_refs}")

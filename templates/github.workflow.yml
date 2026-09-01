@@ -9,6 +9,12 @@ permissions:
   contents: read
   pull-requests: write
   actions: write
+  # gh pr view queries the GraphQL statusCheckRollup (commit checks); on
+  # private repos the job token cannot read it without these scopes and
+  # the gather step fails (found via kai-cameo-mcp #105, restored at the
+  # template level so rendered files never regress).
+  checks: read
+  statuses: read
 
 concurrency:
   group: codegoose-review-${{ github.event.pull_request.number }}
