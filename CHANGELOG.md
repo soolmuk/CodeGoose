@@ -5,6 +5,15 @@ Notable changes to CodeGoose are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-01
+
+### Fixed
+- github template: the verification-gate region (rebuilt when the dead
+  pre-SHA check was removed in 0.4.0) used a 2-space deeper base indent
+  than the surrounding step; shell semantics were unaffected (verified
+  `bash -n` + verify.py PASS on every platform/style/mode combination)
+  but the region is back to the step's canonical 10-space indentation.
+
 ## [0.4.0] - 2026-09-01
 
 ### Fixed
