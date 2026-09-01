@@ -21,14 +21,25 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # actions/checkout v4 (pinned to the full commit SHA of the v4 branch
+        # head; moving tags are not immutable enough for a workflow that
+        # executes remote scripts with secrets in scope).
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
 
       - name: Install goose CLI
+        env:
+          # Pinned to the v1.48.0 tag (a moving tag like `stable` can serve
+          # different bytes run-to-run; the SHA-256 below is the official
+          # GitHub digest of this exact release asset and is verified before
+          # the script is executed — never `curl | bash` unverified).
+          GOOSE_INSTALL_URL: https://github.com/aaif-goose/goose/releases/download/v1.48.0/download_cli.sh
+          GOOSE_INSTALL_SHA256: ab5ae40513348ec4e6047cc7338040aab2df5246800c111d22065766ba6013f0
         run: |
-          curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
-            | GOOSE_VERSION=v1.48.0 CONFIGURE=false GOOSE_BIN_DIR=/home/runner/.local/bin bash
+          curl -fsSL "$GOOSE_INSTALL_URL" -o download_cli.sh
+          echo "$GOOSE_INSTALL_SHA256  download_cli.sh" | sha256sum --strict --check -
+          GOOSE_VERSION=v1.48.0 CONFIGURE=false GOOSE_BIN_DIR=/home/runner/.local/bin bash download_cli.sh
           echo "/home/runner/.local/bin" >> "$GITHUB_PATH"
 
       - name: Configure goose
@@ -86,9 +97,16 @@ jobs:
           cat changes.txt >> instructions.txt
 
       - name: Run goose
+        # Secret isolation: this step runs an LLM over ATTACKER-CONTROLLED
+        # diff content, so it receives ONLY the provider API key — no
+        # GH_TOKEN. A prompt injection therefore cannot exfiltrate repo
+        # credentials (the provider key is still exposed to the model by
+        # necessity; scope it tightly and rotate on suspicion).
+        # GOOSE_MODE stays auto: the reflection pass must read repository
+        # files to verify findings (read-only per the instructions); a chat
+        # mode would disable that verification.
         env:
           __API_KEY_NAME__: ${{ secrets.__API_KEY_NAME__ }}
-          GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           goose run --instructions instructions.txt > raw.txt
@@ -104,7 +122,9 @@ jobs:
           python3 verify_findings.py extract --body body.md --out findings.json
           if [ -s findings.json ] && [ "$(python3 -c 'import json;print(len(json.load(open("findings.json"))))')" != "0" ]; then
             # Pre-SHA check: skip the 2nd LLM call when the PR head moved.
-            CURRENT_SHA0="$(gh pr view "${{ github.event.pull_request.number }}" --json headRefOid --jq .headRefOid)"
+            # Reads the event payload file instead of `gh pr view` so this
+            # step needs no GH_TOKEN at all (secret isolation above).
+            CURRENT_SHA0="$(python3 -c 'import json,os;print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["pull_request"]["head"]["sha"])')"
             if [ "$CURRENT_SHA0" != "$HEAD_SHA" ]; then
               echo "PR head moved before reflection; skipping verification" >&2
             else
@@ -205,7 +225,8 @@ jobs:
 
       - name: Upload verification gate artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        # actions/upload-artifact v4 (pinned to the full commit SHA; see above).
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: verification-gate-${{ github.event.pull_request.number }}
           path: |

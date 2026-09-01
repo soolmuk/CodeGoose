@@ -33,8 +33,9 @@ object CodeGooseReview : BuildType({
             id = "CodeGooseReview"
             scriptContent = """
                 set -e
-                curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \\
-                  | GOOSE_VERSION=v1.48.0 CONFIGURE=false GOOSE_BIN_DIR="${'$'}HOME/.local/bin" bash
+                curl -fsSL https://github.com/aaif-goose/goose/releases/download/v1.48.0/download_cli.sh -o download_cli.sh
+                echo "ab5ae40513348ec4e6047cc7338040aab2df5246800c111d22065766ba6013f0  download_cli.sh" | sha256sum --strict --check -
+                GOOSE_VERSION=v1.48.0 CONFIGURE=false GOOSE_BIN_DIR="${'$'}HOME/.local/bin" bash download_cli.sh
                 export PATH="${'$'}HOME/.local/bin:${'$'}PATH"
                 mkdir -p ~/.config/goose
                 cat <<'EOF' > ~/.config/goose/config.yaml

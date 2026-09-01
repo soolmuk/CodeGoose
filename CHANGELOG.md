@@ -5,6 +5,30 @@ Notable changes to CodeGoose are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- **Supply-chain hardening (all four platform templates)** — found by
+  CodeGoose/CodeRabbit review on kai-cameo-mcp PR #105:
+  - The goose installer is now downloaded from the **pinned v1.48.0 release
+    tag** (was the moving `stable` tag), saved to a file, and **verified
+    against a SHA-256 digest before execution** — never `curl | bash`
+    unverified. The digest is the official GitHub release asset digest.
+  - `actions/checkout` and `actions/upload-artifact` are pinned to **full
+    commit SHAs** (github + gitea templates).
+  - **Secret isolation (github template)**: the "Run goose" step no longer
+    binds `GH_TOKEN`. It runs an LLM over attacker-controlled PR diff
+    content, so a prompt injection could previously have exfiltrated repo
+    credentials; the step now receives only the provider API key. The
+    verification-gate pre-SHA check reads the PR head sha from the event
+    payload file (`GITHUB_EVENT_PATH`) instead of `gh pr view`, removing
+    the last token use from that step. Posting keeps using `GH_TOKEN` in
+    its own step. `GOOSE_MODE` deliberately stays on auto (not chat): the
+    reflection pass must read repository files to verify findings.
+- `scripts/verify.py` **v5 contract**: renders FAIL when the installer is
+  unpinned/unverified, actions use moving tags, or the github goose step
+  binds `GH_TOKEN`.
+
 ## [0.1.0] - 2026-08-31
 
 ### Added

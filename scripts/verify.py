@@ -5,6 +5,16 @@ Usage:
   python3 verify.py <platform> <config-file>
 platform: github | gitlab | gitea | teamcity
 
+  v5 contract (supply-chain hardening, on top of v4):
+  - the goose installer must be downloaded from a PINNED release tag (never
+    the moving `stable` tag), saved to a file, verified against a SHA-256
+    digest BEFORE execution, and executed from that file — never
+    `curl | bash` unverified.
+  - GitHub/Gitea templates must pin `actions/checkout` and
+    `actions/upload-artifact` to full commit SHAs.
+  - The GitHub goose step must NOT bind GH_TOKEN (secret isolation: the
+    LLM step runs over attacker-controlled diff content; repo credentials
+    must not be in its environment).
   v4 contract (release-only distribution, on top of the v3 gate contract):
   - every helper/instruction download must come from the CodeGoose release
     assets base (releases/latest/download/<basename>). Any legacy
@@ -153,6 +163,24 @@ def common_inline_checks(t, errs):
         errs.append("must run inline_threads prepare (anchor validation + clamp)")
 
 
+def common_supply_chain_checks(t, errs):
+    """v5 contract: pinned, digest-verified installer; no unverified pipes."""
+    if "releases/download/stable/download_cli.sh" in t:
+        errs.append(
+            "goose installer must be pinned to a release tag (found the "
+            "moving `stable` tag)")
+    if "bash download_cli.sh" not in t:
+        errs.append(
+            "installer must be saved to a file and executed from it "
+            "(no unverified `curl | bash` pipe)")
+    if "sha256sum --strict --check" not in t:
+        errs.append(
+            "installer must be verified against a SHA-256 digest before "
+            "execution")
+    if t.count("download_cli.sh") > 0 and "ab5ae40513348ec4e6047cc7338040aab2df5246800c111d22065766ba6013f0" not in t:
+        errs.append("installer digest literal missing")
+
+
 def common_release_checks(t, errs):
     """v4 contract: consumers fetch release assets only, never git refs."""
     if LEGACY_RAW_MARK in t:
@@ -211,8 +239,27 @@ def check_github(t):
         errs.append("github workflow must upload the verification-gate artifacts")
     if "actions: write" not in t:
         errs.append("github workflow needs actions: write to upload artifacts")
+    if "actions/checkout@" in t and "actions/checkout@11d5960a326750d5838078e36cf38b85af677262" not in t:
+        errs.append("actions/checkout must be pinned to a full commit SHA")
+    if "actions/upload-artifact@" in t and "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" not in t:
+        errs.append("actions/upload-artifact must be pinned to a full commit SHA")
     common_verify_checks(t, errs)
     common_release_checks(t, errs)
+    common_supply_chain_checks(t, errs)
+    # Secret isolation (v5): the goose step runs an LLM over attacker-
+    # controlled diff content and must not bind GH_TOKEN. The run block
+    # between "Run goose" and "Post review to PR" must be token-free.
+    goose_idx = t.find("- name: Run goose")
+    post_idx = t.find("- name: Post review to PR")
+    if goose_idx >= 0 and post_idx > goose_idx:
+        block = t[goose_idx:post_idx]
+        # Only an actual env BINDING violates isolation (comments may
+        # explain why the token is absent).
+        import re as _re
+        if _re.search(r"^\s*GH_TOKEN\s*:", block, _re.MULTILINE):
+            errs.append(
+                "the goose step must not bind GH_TOKEN (secret isolation "
+                "over attacker-controlled diff content)")
     for ph in PLACEHOLDERS:
         if ph in t:
             errs.append(f"unsubstituted placeholder: {ph}")
@@ -287,6 +334,9 @@ def check_gitea(t):
         errs.append("review must be pinned to the PR head sha")
     common_verify_checks(t, errs)
     common_release_checks(t, errs)
+    if "actions/checkout@" in t and "actions/checkout@11d5960a326750d5838078e36cf38b85af677262" not in t:
+        errs.append("actions/checkout must be pinned to a full commit SHA")
+    common_supply_chain_checks(t, errs)
     for ph in PLACEHOLDERS:
         if ph in t:
             errs.append(f"unsubstituted placeholder: {ph}")
@@ -311,6 +361,7 @@ def check_teamcity(t):
         errs.append("pr.diff must be produced for anchor validation")
     common_verify_checks(t, errs)
     common_release_checks(t, errs)
+    common_supply_chain_checks(t, errs)
     if "executionTimeout" not in t:
         errs.append("TeamCity build must set executionTimeout")
     for ph in PLACEHOLDERS:
