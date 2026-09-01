@@ -5,6 +5,33 @@ Notable changes to CodeGoose are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-09-01
+
+### Security
+- **Checksum gate hardening (all four platform templates)** — kai-cameo-mcp
+  #106 review follow-ups:
+  - Every downloaded helper asset now carries an explicit
+    listed-in-SHA256SUMS guard (`grep -q "  <asset>$" SHA256SUMS`) BEFORE the
+    `--ignore-missing` digest check. Verified locally: `--ignore-missing`
+    alone would silently pass an asset missing from the manifest (empty grep
+    output feeds sha256sum --check with exit 0), so the listing guard closes
+    the completeness foot-gun.
+  - The style instructions asset (graded-review/summary) is keyed in the
+    manifest by its RELEASE basename but saved locally as
+    `instructions.template.md`, so `--ignore-missing` could NEVER match it —
+    its digest was effectively unverified. Templates now rewrite the
+    manifest line to the local name and check it strictly
+    (`sha256sum --strict --check /tmp/style.sum`), with a matching failure
+    demonstrated to fail the job.
+  - Comments corrected to state the actual guarantee: this is asset/transport
+    INTEGRITY, not authenticity — SHA256SUMS rides the same release channel,
+    so a fully compromised release account could replace it too (the
+    accepted trade-off of the auto-tracking model). The earlier
+    "swapped/compromised asset must fail" phrasing overstated the boundary.
+- `scripts/verify.py`: renders FAIL when a helper download lacks the
+  explicit listing guard, when the style asset is not verified via the
+  rewritten manifest line, or (github) when `actions: read` is missing.
+
 ## [0.4.2] - 2026-09-01
 
 ### Fixed

@@ -83,21 +83,29 @@ jobs:
           } > changes.txt
           # Shared helpers: downloaded from the LATEST CodeGoose release
           # (release-only distribution model; installed workflows track
-          # releases automatically, main is never fetched). Every asset is
-          # verified against the release's SHA256SUMS manifest before use —
-          # a swapped/compromised asset must fail the job, not execute.
+          # releases automatically, main is never fetched). INTEGRITY gate:
+          # every asset fetched here must be LISTED in the release's
+          # SHA256SUMS (explicit grep guard — --ignore-missing only tolerates
+          # manifest entries for assets not yet fetched) and its digest
+          # verified before use. This is asset/transport integrity, NOT
+          # authenticity: SHA256SUMS rides the same release channel, so a
+          # fully compromised release account could replace it too (the
+          # accepted trade-off of the auto-tracking model).
           curl -fsSL https://github.com/soolmuk/CodeGoose/releases/latest/download/SHA256SUMS -o SHA256SUMS
           [ -s SHA256SUMS ] || { echo "Failed to download SHA256SUMS manifest" >&2; exit 1; }
           curl -fsSL https://github.com/soolmuk/CodeGoose/releases/latest/download/inline_threads.py -o inline_threads.py
           [ -s inline_threads.py ] || { echo "Failed to download inline_threads.py helper" >&2; exit 1; }
+          grep -q "  inline_threads.py$" SHA256SUMS || { echo "SHA256SUMS does not list inline_threads.py" >&2; exit 1; }
           sha256sum --strict --check --ignore-missing SHA256SUMS
           # Verification-gate helpers (issue #10): downloaded even when the
           # gate runs; the whole region (downloads included) is removed
           # when rendering with --verification off.
           curl -fsSL https://github.com/soolmuk/CodeGoose/releases/latest/download/verify_findings.py -o verify_findings.py
           [ -s verify_findings.py ] || { echo "Failed to download verify_findings.py helper" >&2; exit 1; }
+          grep -q "  verify_findings.py$" SHA256SUMS || { echo "SHA256SUMS does not list verify_findings.py" >&2; exit 1; }
           curl -fsSL https://github.com/soolmuk/CodeGoose/releases/latest/download/instructions.reflection.md -o instructions.reflection.md
           [ -s instructions.reflection.md ] || { echo "Failed to download reflection instructions" >&2; exit 1; }
+          grep -q "  instructions.reflection.md$" SHA256SUMS || { echo "SHA256SUMS does not list instructions.reflection.md" >&2; exit 1; }
 
       - name: Write instructions
         run: |
@@ -108,7 +116,13 @@ jobs:
           # substitutes Korean and fails on leftover tokens.
           curl -fsSL https://github.com/soolmuk/CodeGoose/releases/latest/download/instructions.graded.md -o instructions.template.md
           [ -s instructions.template.md ] || { echo "Failed to download review instructions" >&2; exit 1; }
-          sha256sum --strict --check --ignore-missing SHA256SUMS
+          # The manifest keys this asset by its RELEASE basename, so verify via
+          # a rewritten line: a plain --ignore-missing check would silently
+          # SKIP it (the local name never matches the manifest key) and its
+          # digest would never be enforced.
+          grep "  instructions.graded.md$" SHA256SUMS > /tmp/style.line || { echo "SHA256SUMS does not list the instructions asset" >&2; exit 1; }
+          awk -v l="instructions.template.md" '{print $1 "  " l}' /tmp/style.line > /tmp/style.sum
+          sha256sum --strict --check /tmp/style.sum
           python3 inline_threads.py lang \
             --instruction-file instructions.template.md \
             --language "Korean" \

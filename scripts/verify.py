@@ -205,6 +205,29 @@ def common_credential_checks(t, errs):
             "--ignore-missing SHA256SUMS)")
     if "SHA256SUMS -o SHA256SUMS" not in t:
         errs.append("template must download the SHA256SUMS manifest asset")
+    # --ignore-missing silently skips manifest-absent assets; every helper
+    # download must ALSO carry an explicit listed-in-manifest grep guard
+    # (kai-cameo-mcp #106 review: a grep-less --ignore-missing pipeline
+    # passes empty input through sha256sum --check with exit 0). Gate-only
+    # assets (verify_findings.py, instructions.reflection.md) are checked
+    # only when the verification gate is rendered (they are absent in
+    # --verification off by design).
+    guard_assets = ["inline_threads.py"]
+    if "verify_findings.py" in t:
+        guard_assets += ["verify_findings.py", "instructions.reflection.md"]
+    for asset in guard_assets:
+        if f'SHA256SUMS does not list {asset}' not in t:
+            errs.append(
+                f"missing explicit SHA256SUMS listing guard for {asset} "
+                "(--ignore-missing alone would skip an unlisted asset)")
+    # The style asset is keyed by its RELEASE basename but saved under a
+    # different local name; its digest must be checked via a rewritten
+    # manifest line, never --ignore-missing (which would never match it).
+    if "awk -v l=" not in t or "/tmp/style.sum" not in t:
+        errs.append(
+            "style asset digest must be verified via a rewritten manifest "
+            "line (manifest key = release basename, local name differs; "
+            "--ignore-missing would silently skip it)")
 
 
 def common_release_checks(t, errs):

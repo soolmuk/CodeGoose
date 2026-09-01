@@ -46,20 +46,29 @@ object CodeGooseReview : BuildType({
                 set -e
                 # Shared helpers: downloaded from the LATEST CodeGoose
                 # release (release-only distribution; installed workflows
-                # track releases automatically, main is never fetched) and
-                # verified against the release's SHA256SUMS manifest — a
-                # swapped/compromised asset must fail the build, not execute.
+                # track releases automatically, main is never fetched).
+                # INTEGRITY gate: every asset fetched here must be LISTED in
+                # the release's SHA256SUMS (explicit grep guard —
+                # --ignore-missing only tolerates manifest entries for
+                # assets not yet fetched) and its digest verified before use.
+                # This is asset/transport integrity, NOT authenticity:
+                # SHA256SUMS rides the same release channel, so a fully
+                # compromised release account could replace it too (the
+                # accepted trade-off of the auto-tracking model).
                 curl -fsSL __RECIPES_BASE__/SHA256SUMS -o SHA256SUMS
                 [ -s SHA256SUMS ] || { echo "Failed to download SHA256SUMS manifest" >&2; exit 1; }
                 curl -fsSL __RECIPES_BASE__/inline_threads.py -o inline_threads.py
                 [ -s inline_threads.py ] || { echo "Failed to download inline_threads.py helper" >&2; exit 1; }
+                grep -q "  inline_threads.py$" SHA256SUMS || { echo "SHA256SUMS does not list inline_threads.py" >&2; exit 1; }
                 sha256sum --strict --check --ignore-missing SHA256SUMS
                 #[verify:begin]
                 # Verification-gate helpers (issue #10): downloaded in all modes.
                 curl -fsSL __RECIPES_BASE__/verify_findings.py -o verify_findings.py
                 [ -s verify_findings.py ] || { echo "Failed to download verify_findings.py helper" >&2; exit 1; }
+                grep -q "  verify_findings.py$" SHA256SUMS || { echo "SHA256SUMS does not list verify_findings.py" >&2; exit 1; }
                 curl -fsSL __RECIPES_BASE__/instructions.reflection.md -o instructions.reflection.md
                 [ -s instructions.reflection.md ] || { echo "Failed to download reflection instructions" >&2; exit 1; }
+                grep -q "  instructions.reflection.md$" SHA256SUMS || { echo "SHA256SUMS does not list instructions.reflection.md" >&2; exit 1; }
                 #[verify:end]
                 {
                   echo "## Files Changed"
@@ -74,7 +83,13 @@ object CodeGooseReview : BuildType({
                 # install uses the latest reviewed instructions.
                 curl -fsSL __RECIPES_BASE__/__STYLE_ASSET__ -o instructions.template.md
                 [ -s instructions.template.md ] || { echo "Failed to download review instructions" >&2; exit 1; }
-                sha256sum --strict --check --ignore-missing SHA256SUMS
+                # Manifest keys this asset by its RELEASE basename; rewrite
+                # the line so the digest IS enforced (a plain
+                # --ignore-missing check would silently skip the local
+                # name mismatch).
+                grep "  __STYLE_ASSET__$" SHA256SUMS > /tmp/style.line || { echo "SHA256SUMS does not list the instructions asset" >&2; exit 1; }
+                awk -v l="instructions.template.md" '{print $1 "  " l}' /tmp/style.line > /tmp/style.sum
+                sha256sum --strict --check /tmp/style.sum
                 python3 inline_threads.py lang --instruction-file instructions.template.md --language "__LANGUAGE__" --out instructions.txt
                 cat changes.txt >> instructions.txt
                 export __API_KEY_NAME__="${'$'}__API_KEY_NAME__"
