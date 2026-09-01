@@ -5,6 +5,18 @@ Notable changes to CodeGoose are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-09-01
+
+### Fixed
+- github template: `actions: read` restored (0.4.0 dropped the actions
+  scope entirely). `gh pr view`'s statusCheckRollup includes
+  `checkSuite.workflowRun`, which requires the actions scope — with none
+  at all, the gather step fails with "Resource not accessible by
+  integration" (first CI run of kai-cameo-mcp #106, 2026-09-01). Least
+  privilege here is read, not absent; write is still never needed.
+  verify.py now requires `actions: read` and continues to forbid
+  `actions: write`.
+
 ## [0.4.1] - 2026-09-01
 
 ### Fixed

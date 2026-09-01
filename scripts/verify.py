@@ -277,8 +277,13 @@ def check_github(t):
         errs.append(
             "github workflow must NOT request actions: write (least "
             "privilege): upload-artifact v4 uses the runner's "
-            "ACTIONS_RUNTIME_TOKEN, not GITHUB_TOKEN — no action scope "
-            "is needed")
+            "ACTIONS_RUNTIME_TOKEN, not GITHUB_TOKEN")
+    if d.get("permissions", {}).get("actions") != "read":
+        errs.append(
+            "github workflow needs actions: read — gh pr view's "
+            "statusCheckRollup includes checkSuite.workflowRun, which "
+            "requires the actions scope (any less fails with 'Resource "
+            "not accessible by integration'; write is never needed)")
     if "actions/checkout@" in t and "actions/checkout@11d5960a326750d5838078e36cf38b85af677262" not in t:
         errs.append("actions/checkout must be pinned to a full commit SHA")
     if "actions/upload-artifact@" in t and "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" not in t:

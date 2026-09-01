@@ -11,7 +11,11 @@ permissions:
   # gh pr view queries the GraphQL statusCheckRollup (commit checks); on
   # private repos the job token cannot read it without these scopes and
   # the gather step fails (found via kai-cameo-mcp #105, restored at the
-  # template level so rendered files never regress).
+  # template level so rendered files never regress). The rollup includes
+  # checkSuite.workflowRun, which additionally needs actions:read —
+  # without ANY actions scope the same query fails with "Resource not
+  # accessible by integration" (kai-cameo-mcp #106 CI, 2026-09-01).
+  actions: read
   checks: read
   statuses: read
 
