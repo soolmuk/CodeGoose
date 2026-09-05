@@ -195,7 +195,8 @@ def main():
     ap.add_argument("--model", required=True)
     ap.add_argument("--verify-model", default=None,
                     help="model for the verification (reflection) pass; "
-                         "defaults to --model (single-model behavior)")
+                         "defaults to --model (single-model behavior). "
+                         "GitHub workflows only — rejected elsewhere")
     ap.add_argument("--style", required=True, choices=["graded-review", "changes-summary"])
     ap.add_argument("--language", default="Korean")
     ap.add_argument("--local", action="store_true",
@@ -213,6 +214,13 @@ def main():
     provider = PROVIDER_ALIASES.get(args.provider, args.provider)
     if provider not in API_KEY_NAMES:
         print(f"FAIL: unknown provider {args.provider}")
+        return 2
+
+    if args.verify_model and args.platform != "github":
+        # The __GOOSE_VERIFY_MODEL__ switch only exists in the GitHub workflow
+        # template; on other platforms the flag would silently no-op and the
+        # reflection pass would keep the review model. Fail loud instead.
+        print("FAIL: --verify-model is only supported on the github platform")
         return 2
 
     spec = SOURCES[args.platform]

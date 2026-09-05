@@ -140,7 +140,6 @@ prompt: |
   python3 /tmp/render.py {{ ci_platform }} \
     --provider {{ ci_provider }} \
     --model {{ goose_model }} \
-    --verify-model {{ goose_verify_model }} \
     --style {{ review_style }} \
     --language {{ output_language }} \
     --verification {{ verification_gate }} \
@@ -166,9 +165,12 @@ prompt: |
     deterministic pipeline (not authored by the LLM).
   - GOOSE_MODEL: {{ goose_model }} (hardcoded into the config by the renderer).
   - Verification model: {{ goose_verify_model }} — the model the reflection
-    pass uses. If the user left it empty, DO NOT pass --verify-model to the
-    renderer (both passes then use GOOSE_MODEL). If set, pass
-    --verify-model {{ goose_verify_model }} exactly.
+    pass uses. If the user left it empty, run the Step 2 command exactly as
+    written (both passes then use GOOSE_MODEL; never pass an empty --verify-
+    model value — it would swallow the next flag). If set, ADD one line into
+    the Step 2 command right after --model:
+    --verify-model {{ goose_verify_model }} \\
+    (keep the trailing \\ continuation).
   - Provider secret that the user must add, e.g. for {{ ci_provider }} the
     required repo secret name from the mapping above.
   - How to trigger: open/update a pull request; CI posts the {{ review_style }}
