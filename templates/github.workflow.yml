@@ -154,17 +154,6 @@ jobs:
           #[verify:begin]
           # Verification gate (issue #10): single reflection pass + merge.
           # Same step run block: the provider key binding stays exactly 1.
-          # Issue: verification (reflection) pass may run a different
-          # model than the review pass. __GOOSE_VERIFY_MODEL__ is
-          # substituted with the review model by default (single-model
-          # behavior preserved); render.py --verify-model overrides it.
-          # Rewriting the global config.yaml here only affects the
-          # remaining goose invocations in this step (reflection + retry).
-          cat <<'VEOF' > ~/.config/goose/config.yaml
-          GOOSE_PROVIDER: __PROVIDER__
-          GOOSE_MODEL: __GOOSE_VERIFY_MODEL__
-          keyring: false
-          VEOF
           # (The old "skip when the PR head moved" pre-check read the same
           #  event payload twice — head.sha vs head.sha — so it never fired;
           #  the posting step's live `gh pr view` check is the real guard.)
@@ -180,6 +169,15 @@ jobs:
               python3 verify_findings.py hunks --diff pr.diff --findings findings.json --out hunks.txt
               cat hunks.txt
             } >> reflection_input.txt
+            # Verify-model switch (render.py --verify-model): rewrite the
+            # config ONLY when the reflection pass will actually run —
+            # findings exist and the PR head is unchanged. Empty findings or
+            # single-model usage skips the rewrite entirely (no wasted I/O).
+            cat <<'VEOF' > ~/.config/goose/config.yaml
+            GOOSE_PROVIDER: __PROVIDER__
+            GOOSE_MODEL: __GOOSE_VERIFY_MODEL__
+            keyring: false
+            VEOF
             goose run --instructions reflection_input.txt > reflect_raw.txt
             if python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out scores.json; then
               python3 verify_findings.py merge --body body.md --scores scores.json \

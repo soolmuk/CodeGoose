@@ -165,12 +165,18 @@ prompt: |
     deterministic pipeline (not authored by the LLM).
   - GOOSE_MODEL: {{ goose_model }} (hardcoded into the config by the renderer).
   - Verification model: {{ goose_verify_model }} — the model the reflection
-    pass uses. If the user left it empty, run the Step 2 command exactly as
-    written (both passes then use GOOSE_MODEL; never pass an empty --verify-
-    model value — it would swallow the next flag). If set, ADD one line into
-    the Step 2 command right after --model:
+    pass uses. GITHUB ONLY: the renderer rejects --verify-model on
+    gitlab/gitea/teamcity (exit 2), so if {{ ci_platform }} is not github
+    and the user set a value, report the constraint and RE-RUN WITHOUT the
+    flag instead of passing it. If the user left it empty, run the Step 2
+    command exactly as written (both passes then use GOOSE_MODEL; never
+    pass an empty --verify-model value — it would swallow the next flag).
+    If set AND the platform is github, ADD one line into the Step 2 command
+    right after --model:
     --verify-model {{ goose_verify_model }} \\
-    (keep the trailing \\ continuation).
+    (keep the trailing \\ continuation; must be a model from the SAME
+    provider {{ ci_provider }} — the rewritten config keeps the review
+    provider).
   - Provider secret that the user must add, e.g. for {{ ci_provider }} the
     required repo secret name from the mapping above.
   - How to trigger: open/update a pull request; CI posts the {{ review_style }}

@@ -196,7 +196,8 @@ def main():
     ap.add_argument("--verify-model", default=None,
                     help="model for the verification (reflection) pass; "
                          "defaults to --model (single-model behavior). "
-                         "GitHub workflows only — rejected elsewhere")
+                         "GitHub workflows only — rejected elsewhere. "
+                         "With --verification off the value is unused")
     ap.add_argument("--style", required=True, choices=["graded-review", "changes-summary"])
     ap.add_argument("--language", default="Korean")
     ap.add_argument("--local", action="store_true",
@@ -222,6 +223,11 @@ def main():
         # reflection pass would keep the review model. Fail loud instead.
         print("FAIL: --verify-model is only supported on the github platform")
         return 2
+    if args.verify_model and args.verification == "off":
+        # --verification off strips the whole verify region including the
+        # model switch, so --verify-model would be dead input. Warn (not
+        # fail): the render is still valid, the user just gave a no-op value.
+        print("WARN: --verify-model has no effect with --verification off")
 
     spec = SOURCES[args.platform]
     if args.local:
