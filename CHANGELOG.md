@@ -5,6 +5,39 @@ Notable changes to CodeGoose are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-05
+
+### Added
+
+- **Per-pass verification model (`--verify-model`)** — the verification
+  (reflection) pass can now run a different model than the review pass:
+  - `render.py --verify-model <model>` substitutes
+    `__GOOSE_VERIFY_MODEL__` (default: the review model — single-model
+    behavior preserved for existing installs).
+  - GitHub template: the reflection + corrective-retry invocations swap
+    ONLY the `GOOSE_MODEL` line via sed right before the reflection run
+    (lazy — only when findings exist), so keys added to Configure goose
+    by future releases survive into the reflection pass.
+  - Fail loud: non-github platforms reject `--verify-model` with exit 2
+    (the switch does not exist there yet; porting tracked in #3).
+  - Guard heuristics: WARN when the verify model id looks like another
+    provider's model (the rewritten config keeps the review provider —
+    a mismatch would fail reflection auth and fail the gate open), and
+    WARN when `--verification off` makes the flag a no-op.
+- **Setup recipe**: new optional `goose_verify_model` parameter with the
+  platform constraint (github only) and same-provider requirement
+  documented; empty value = both passes on `goose_model`. Deeplinks
+  regenerated (README.md, README.ko.md, docs/launch.html).
+
+### Fixed
+
+- Setup recipe: the Step 2 command template embedded
+  `--verify-model {{ goose_verify_model }}` unconditionally while Step 4
+  said to omit the flag when the value is empty — an agent following the
+  literal command with the empty default would make `--style` the flag
+  value. The command block now matches the no-flag default; Step 4
+  instructs adding the line only when a value is set.
+
 ## [0.4.3] - 2026-09-01
 
 ### Security
