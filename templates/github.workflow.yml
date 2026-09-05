@@ -169,6 +169,15 @@ jobs:
               python3 verify_findings.py hunks --diff pr.diff --findings findings.json --out hunks.txt
               cat hunks.txt
             } >> reflection_input.txt
+            # Verify-model switch (render.py --verify-model): swap ONLY the
+            # GOOSE_MODEL line for the reflection + retry invocations. Runs
+            # only here — findings exist. (A head-move after this point is
+            # tolerated: the post step's live guard skips a stale review.)
+            # When --verify-model is unset the substituted value equals the
+            # review model and this sed is a value no-op. sed (not a full
+            # rewrite) so keys added to Configure goose by future releases
+            # survive into the reflection pass.
+            sed -i.bak 's|^GOOSE_MODEL: .*|GOOSE_MODEL: __GOOSE_VERIFY_MODEL__|' ~/.config/goose/config.yaml && rm -f ~/.config/goose/config.yaml.bak
             goose run --instructions reflection_input.txt > reflect_raw.txt
             if python3 verify_findings.py reflect-parse --raw reflect_raw.txt --out scores.json; then
               python3 verify_findings.py merge --body body.md --scores scores.json \

@@ -57,6 +57,16 @@ parameters:
       gpt-4o for openai, anthropic/claude-sonnet-4 for openrouter,
       accounts/fireworks/models/deepseek-v4-flash-0731 for fireworks-ai)
 
+  - key: goose_verify_model
+    input_type: string
+    requirement: optional
+    default: ""
+    description: >
+      Optional model for the verification (reflection) pass only.
+      Leave empty to reuse goose_model for both passes (default).
+      Example for fireworks-ai:
+      accounts/fireworks/models/glm-5p3-flash
+
   - key: verification_gate
     input_type: select
     requirement: required
@@ -110,6 +120,7 @@ prompt: |
   - review_style: {{ review_style }}
   - ci_provider: {{ ci_provider }}
   - goose_model: {{ goose_model }}
+  - goose_verify_model: {{ goose_verify_model }} (empty = same as goose_model)
   - verification_gate: {{ verification_gate }}
   - verify_gate_profile: {{ verify_gate_profile }}
   (Provider -> secret name: ollama_cloud=OLLAMA_CLOUD_API_KEY,
@@ -153,6 +164,19 @@ prompt: |
   - Status (created/updated) + config file path, and that it was rendered by the
     deterministic pipeline (not authored by the LLM).
   - GOOSE_MODEL: {{ goose_model }} (hardcoded into the config by the renderer).
+  - Verification model: {{ goose_verify_model }} — the model the reflection
+    pass uses. GITHUB ONLY: the renderer rejects --verify-model on
+    gitlab/gitea/teamcity (exit 2), so if {{ ci_platform }} is not github
+    and the user set a value, report the constraint and RE-RUN WITHOUT the
+    flag instead of passing it. If the user left it empty, run the Step 2
+    command exactly as written (both passes then use GOOSE_MODEL; never
+    pass an empty --verify-model value — it would swallow the next flag).
+    If set AND the platform is github, ADD one line into the Step 2 command
+    right after --model:
+    --verify-model {{ goose_verify_model }} \\
+    (keep the trailing \\ continuation; must be a model from the SAME
+    provider {{ ci_provider }} — the rewritten config keeps the review
+    provider).
   - Provider secret that the user must add, e.g. for {{ ci_provider }} the
     required repo secret name from the mapping above.
   - How to trigger: open/update a pull request; CI posts the {{ review_style }}

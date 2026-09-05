@@ -16,7 +16,7 @@ config downloads helpers AND instructions from the same latest-release
 base URL that render.py used (release-only distribution model).
 
 Placeholders (all __UPPER__):
-  __PROVIDER__ __GOOSE_MODEL__ __LANGUAGE__ __API_KEY_NAME__
+  __PROVIDER__ __GOOSE_MODEL__ __GOOSE_VERIFY_MODEL__ __LANGUAGE__ __API_KEY_NAME__
   __VERIFY_PROFILE__ __VERIFY_MODE__ (verification gate, on/shadow only)
   __STYLE_ASSET__ (asset basename, e.g. instructions.graded.md; the
     rendered config downloads it at CI runtime and substitutes
@@ -28,7 +28,9 @@ Verification gate (issue #10):
   off    the #[verify:begin]/#[verify:end] marked region is REMOVED
   The reflection instructions (instructions.reflection.md asset) are
   downloaded at CI runtime with the same pattern as inline_threads.py,
-  so a single model/provider/config serves both passes.
+  so a single model/provider/config serves both passes unless
+  --verify-model overrides __GOOSE_VERIFY_MODEL__ (the reflection
+  pass rewrites the config before its first goose invocation).
 """
 import argparse
 import os
@@ -191,6 +193,11 @@ def main():
     ap.add_argument("platform", choices=list(SOURCES))
     ap.add_argument("--provider", required=True)
     ap.add_argument("--model", required=True)
+    ap.add_argument("--verify-model", default=None,
+                    help="model for the verification (reflection) pass; "
+                         "defaults to --model (single-model behavior). "
+                         "GitHub workflows only — rejected elsewhere. "
+                         "With --verification off the value is unused")
     ap.add_argument("--style", required=True, choices=["graded-review", "changes-summary"])
     ap.add_argument("--language", default="Korean")
     ap.add_argument("--local", action="store_true",
@@ -209,6 +216,36 @@ def main():
     if provider not in API_KEY_NAMES:
         print(f"FAIL: unknown provider {args.provider}")
         return 2
+
+    if args.verify_model and args.platform != "github":
+        # The __GOOSE_VERIFY_MODEL__ switch only exists in the GitHub workflow
+        # template; on other platforms the flag would silently no-op and the
+        # reflection pass would keep the review model. Fail loud instead.
+        print("FAIL: --verify-model is only supported on the github platform")
+        return 2
+    if args.verify_model and args.verification == "off":
+        # --verification off strips the whole verify region including the
+        # model switch, so --verify-model would be dead input. Warn (not
+        # fail): the render is still valid, the user just gave a no-op value.
+        print("WARN: --verify-model has no effect with --verification off")
+    # Cheap prefix heuristic: warn when the verify model id looks like it
+    # belongs to a different provider than the one configured. The rewritten
+    # config keeps the REVIEW provider, so a mismatched model id fails at
+    # runtime — and the reflection gate fails open (review still posts).
+    # This is a heuristic, not a catalog check: unknown prefixes pass.
+    if args.verify_model and args.verify_model != args.model:
+        _pfx = {"fireworks-ai": "accounts/fireworks/models/",
+                "openai": ["gpt-", "o1", "o3", "chatgpt"],
+                "anthropic": ["claude-"],
+                "openrouter": [],
+                "ollama_cloud": []}
+        _own = _pfx.get(provider, [])
+        _own_list = _own if isinstance(_own, list) else [_own]
+        if _own_list and not any(args.verify_model.startswith(p) for p in _own_list):
+            _foreign = [name for name, pfx in _pfx.items()
+                        if name != provider and any(args.verify_model.startswith(p) for p in (pfx if isinstance(pfx, list) else [pfx]))]
+            if _foreign:
+                print(f"WARN: --verify-model looks like a {_foreign[0]} model but the config keeps provider {provider} — the reflection pass will fail auth if the provider does not serve it")
 
     spec = SOURCES[args.platform]
     if args.local:
@@ -239,6 +276,7 @@ def main():
         ("__RECIPES_BASE__", release_base()),
         ("__PROVIDER__", provider),
         ("__GOOSE_MODEL__", args.model),
+        ("__GOOSE_VERIFY_MODEL__", args.verify_model or args.model),
         ("__API_KEY_NAME__", API_KEY_NAMES[provider]),
         ("__VERIFY_PROFILE__", args.verify_profile),
         ("__VERIFY_MODE__", verify_mode),
