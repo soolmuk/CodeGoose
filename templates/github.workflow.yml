@@ -154,6 +154,17 @@ jobs:
           #[verify:begin]
           # Verification gate (issue #10): single reflection pass + merge.
           # Same step run block: the provider key binding stays exactly 1.
+          # Issue: verification (reflection) pass may run a different
+          # model than the review pass. __GOOSE_VERIFY_MODEL__ is
+          # substituted with the review model by default (single-model
+          # behavior preserved); render.py --verify-model overrides it.
+          # Rewriting the global config.yaml here only affects the
+          # remaining goose invocations in this step (reflection + retry).
+          cat <<'VEOF' > ~/.config/goose/config.yaml
+          GOOSE_PROVIDER: __PROVIDER__
+          GOOSE_MODEL: __GOOSE_VERIFY_MODEL__
+          keyring: false
+          VEOF
           # (The old "skip when the PR head moved" pre-check read the same
           #  event payload twice — head.sha vs head.sha — so it never fired;
           #  the posting step's live `gh pr view` check is the real guard.)

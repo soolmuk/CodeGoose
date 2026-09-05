@@ -16,7 +16,7 @@ config downloads helpers AND instructions from the same latest-release
 base URL that render.py used (release-only distribution model).
 
 Placeholders (all __UPPER__):
-  __PROVIDER__ __GOOSE_MODEL__ __LANGUAGE__ __API_KEY_NAME__
+  __PROVIDER__ __GOOSE_MODEL__ __GOOSE_VERIFY_MODEL__ __LANGUAGE__ __API_KEY_NAME__
   __VERIFY_PROFILE__ __VERIFY_MODE__ (verification gate, on/shadow only)
   __STYLE_ASSET__ (asset basename, e.g. instructions.graded.md; the
     rendered config downloads it at CI runtime and substitutes
@@ -28,7 +28,9 @@ Verification gate (issue #10):
   off    the #[verify:begin]/#[verify:end] marked region is REMOVED
   The reflection instructions (instructions.reflection.md asset) are
   downloaded at CI runtime with the same pattern as inline_threads.py,
-  so a single model/provider/config serves both passes.
+  so a single model/provider/config serves both passes unless
+  --verify-model overrides __GOOSE_VERIFY_MODEL__ (the reflection
+  pass rewrites the config before its first goose invocation).
 """
 import argparse
 import os
@@ -191,6 +193,9 @@ def main():
     ap.add_argument("platform", choices=list(SOURCES))
     ap.add_argument("--provider", required=True)
     ap.add_argument("--model", required=True)
+    ap.add_argument("--verify-model", default=None,
+                    help="model for the verification (reflection) pass; "
+                         "defaults to --model (single-model behavior)")
     ap.add_argument("--style", required=True, choices=["graded-review", "changes-summary"])
     ap.add_argument("--language", default="Korean")
     ap.add_argument("--local", action="store_true",
@@ -239,6 +244,7 @@ def main():
         ("__RECIPES_BASE__", release_base()),
         ("__PROVIDER__", provider),
         ("__GOOSE_MODEL__", args.model),
+        ("__GOOSE_VERIFY_MODEL__", args.verify_model or args.model),
         ("__API_KEY_NAME__", API_KEY_NAMES[provider]),
         ("__VERIFY_PROFILE__", args.verify_profile),
         ("__VERIFY_MODE__", verify_mode),
