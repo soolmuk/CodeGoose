@@ -228,6 +228,24 @@ def main():
         # model switch, so --verify-model would be dead input. Warn (not
         # fail): the render is still valid, the user just gave a no-op value.
         print("WARN: --verify-model has no effect with --verification off")
+    # Cheap prefix heuristic: warn when the verify model id looks like it
+    # belongs to a different provider than the one configured. The rewritten
+    # config keeps the REVIEW provider, so a mismatched model id fails at
+    # runtime — and the reflection gate fails open (review still posts).
+    # This is a heuristic, not a catalog check: unknown prefixes pass.
+    if args.verify_model and args.verify_model != args.model:
+        _pfx = {"fireworks-ai": "accounts/fireworks/models/",
+                "openai": ["gpt-", "o1", "o3", "chatgpt"],
+                "anthropic": ["claude-"],
+                "openrouter": [],
+                "ollama_cloud": []}
+        _own = _pfx.get(provider, [])
+        _own_list = _own if isinstance(_own, list) else [_own]
+        if _own_list and not any(args.verify_model.startswith(p) for p in _own_list):
+            _foreign = [name for name, pfx in _pfx.items()
+                        if name != provider and any(args.verify_model.startswith(p) for p in (pfx if isinstance(pfx, list) else [pfx]))]
+            if _foreign:
+                print(f"WARN: --verify-model looks like a {_foreign[0]} model but the config keeps provider {provider} — the reflection pass will fail auth if the provider does not serve it")
 
     spec = SOURCES[args.platform]
     if args.local:
